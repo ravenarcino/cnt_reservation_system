@@ -1,0 +1,186 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Users {
+  id           Int               @id @default(autoincrement())
+  user_id      String            @unique
+  name         String
+  department   String
+  role         String
+  status       userStatus        @default(UNREGISTERED)
+  email        String            @unique
+  password     String
+  systemRole   userSystemRole    @default(USER)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  deletedBy    String?
+  reservations HallReservation[] @relation("UserHallReservation")
+  logs         Logs[]            @relation("UserInfoLog")
+  no_work_days No_Work_Days[]    @relation("NonWorkingDayRequest")
+}
+
+model EquipmentType {
+  id         Int         @id @default(autoincrement())
+  item_id    String      @unique
+  type       String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  deletedBy    String?
+  equipments Equipment[]
+}
+
+model Equipment {
+  id           Int               @id @default(autoincrement())
+  item_id      String            @unique
+  item_name    String
+  item_brand   String?
+  item_number  String?
+  item_type    String
+  status       itemStatus        @default(OPEN)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  deletedBy    String?
+  itemType     EquipmentType     @relation(fields: [item_type], references: [item_id])
+  reservations HallReservation[] @relation("EquipmentToHallReservation")
+}
+
+model HallType {
+  id      Int    @id @default(autoincrement())
+  type_id String @unique
+  type    String
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  deletedBy    String?
+}
+
+model Hall {
+  id           Int               @id @default(autoincrement())
+  hall_id      String            @unique
+  hall_name    String
+  floor        String
+  status       hallStatus        @default(OPEN)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  deletedBy    String?
+  reservations HallReservation[] @relation("HallToHallReservation")
+}
+
+model HallReservation {
+  id                    Int               @id @default(autoincrement())
+  reservation_id        String            @unique
+  userId                String
+  purpose               String
+  attendees_qty         Int
+  hall_type             String
+  date_appointment      DateTime
+  time_from             DateTime
+  time_to               DateTime
+  other_request         String?
+  status                reservationStatus @default(PENDING)
+  notifyUser            Boolean           @default(false)
+  readByUser            Boolean           @default(false)
+  readByHallAdmin       Boolean           @default(false)
+  readByIT              Boolean           @default(false)
+  readBySuperAdmin      Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  deletedByUserAt       DateTime?
+  deletedByHallAdminAt  DateTime?
+  deletedByITAt         DateTime?
+  deletedBySuperAdminAt DateTime?
+  hall_user             Users             @relation("UserHallReservation", fields: [userId], references: [user_id])
+  user_hall_log         Logs[]            @relation("UserHallLog")
+  equipment             Equipment[]       @relation("EquipmentToHallReservation")
+  hall                  Hall[]            @relation("HallToHallReservation")
+  cancellation          HallCancellation?
+}
+
+model HallCancellation {
+  id                 Int             @id @default(autoincrement())
+  cancellation_id    String          @unique 
+  reason             String?
+  file_name          String?
+  path               String?
+  reservationId      String          @unique
+  hallReservation    HallReservation @relation(fields: [reservationId], references: [reservation_id])
+  createdAt          DateTime        @default(now())
+  deletedAt          DateTime?
+  deletedBy          String?
+}
+
+model Logs {
+  id                     Int              @id @default(autoincrement())
+  log_id                 String           @unique
+  event_type             String
+  event                  String
+  changes                String?
+  userId                 String
+  reservationId          String?
+  reservation_type       String?
+  createdAt              DateTime         @default(now())
+  deletedAt              DateTime?
+  user_hall_log          HallReservation? @relation("UserHallLog", fields: [reservationId], references: [reservation_id])
+  user_personal_info_log Users            @relation("UserInfoLog", fields: [userId], references: [user_id])
+} 
+
+model No_Work_Days {
+  id                     Int              @id @default(autoincrement())
+  nwd_id                 String           @unique
+  date                   DateTime
+  description            String
+  type                   noworkdayType @default(CUSTOM)
+  userId                 String
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  deletedAt              DateTime?
+  creator                Users            @relation("NonWorkingDayRequest", fields: [userId], references: [user_id])
+}
+
+enum userSystemRole {
+  USER
+  IT_ADMIN
+  HALL_ADMIN
+  SUPER_ADMIN
+}
+
+enum userStatus {
+  REGISTERED
+  UNREGISTERED
+}
+
+enum itemStatus {
+  OPEN
+  BORROWED
+}
+
+enum hallStatus {
+  OPEN
+  FULL
+}
+
+enum reservationStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+  FOR_APPROVAL
+  FOR_REVIEW
+  DONE
+}
+
+enum noworkdayType {
+  CUSTOM
+  HOLIDAY
+  DAYOFF
+}
