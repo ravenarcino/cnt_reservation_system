@@ -36,7 +36,7 @@ export function NavMain({
 }: {
   items: {
     title: string
-    url: string
+    url?: string
     icon: React.ReactNode
     isActive?: boolean
     isLogout?: boolean

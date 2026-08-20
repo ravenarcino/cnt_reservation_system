@@ -735,12 +735,12 @@ export default function DashboardPage() {
             views={["month", "week", "day", "agenda"]}
             selectable
             components={{
+              dateCellWrapper: CustomDateCellWrapper,
               month: {
-                dateCellWrapper: CustomDateCellWrapper,
                 event: () => null,
               },
             }}
-            eventPropGetter={(event) => {
+            eventPropGetter={(event: any) => {
               const status = event.resource?.status;
               const colorMap: Record<string, string> = {
                 APPROVED: "#16a34a",

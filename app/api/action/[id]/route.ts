@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { sendSpiceworksTicket } from "@/lib/spiceworks";
 
 export async function PATCH(
   req: Request,
@@ -53,10 +52,6 @@ export async function PATCH(
         readByHallAdmin: true,
         updatedAt: new Date(),
       },
-      include: {
-        hall: true,
-        hall_user: true,
-      },
     });
 
     const logs = await prisma.logs.create({
@@ -71,18 +66,11 @@ export async function PATCH(
       },
     });
 
-    // On approval, push a ticket to Spiceworks Cloud Help Desk (best-effort).
-    let spiceworks = null;
-    if (body.action === "APPROVED") {
-      spiceworks = await sendSpiceworksTicket(reservation);
-    }
-
     return NextResponse.json(
       {
         success: true,
         data: reservation,
         logs,
-        spiceworks,
       },
       { status: 200 },
     );
