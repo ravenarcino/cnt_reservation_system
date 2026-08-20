@@ -43,7 +43,14 @@ export async function POST(req: Request) {
       },
     });
 
-    const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+    // Base URL for the reset link. In production set APP_URL (or NEXTAUTH_URL)
+    // to the live domain; falls back to Vercel's URL, then localhost for dev.
+    const baseUrl =
+      process.env.APP_URL ??
+      process.env.NEXTAUTH_URL ??
+      (process.env.VERCEL_URL
+        ? `https://${process.env.VERCEL_URL}`
+        : "http://localhost:3000");
     const resetLink = `${baseUrl}/auth/reset-password?token=${token}`;
 
     try {
