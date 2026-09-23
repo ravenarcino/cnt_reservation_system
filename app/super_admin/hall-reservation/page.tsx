@@ -1,5 +1,9 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
+import { StatusBadge } from "@/components/ui/status-badge";
+
 import { useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -123,7 +127,8 @@ type HallReservation = {
     | "DECLINED"
     | "CANCELLED"
     | "FOR_APPROVAL"
-    | "FOR_REVIEW";
+    | "FOR_REVIEW"
+    | "DONE";
   notifyUser: boolean;
   readByUser: boolean;
   createdAt: string;
@@ -202,7 +207,10 @@ export default function ReservationPage() {
   const { data: hallData, isLoading: hallLoading } = useQuery({
     queryKey: ["hall", page],
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page) });
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: "100",
+      });
 
       const res = await fetch(`/api/halls/rooms/room?${params}`);
       const json = await res.json();
@@ -216,7 +224,10 @@ export default function ReservationPage() {
   const { data: itemData, isLoading: itemLoading } = useQuery({
     queryKey: ["item", page],
     queryFn: async () => {
-      const params = new URLSearchParams({ page: String(page) });
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: "100",
+      });
 
       const res = await fetch(`/api/equipments/items/item?${params}`);
       const json = await res.json();
@@ -226,6 +237,101 @@ export default function ReservationPage() {
       return json;
     },
   });
+
+
+  // 08:30-18:30 business window, in minutes past midnight.
+  const EDIT_BUSINESS_START = 8 * 60 + 30;
+  const EDIT_BUSINESS_END = 18 * 60 + 30;
+
+  // Halls and items the reservation being edited already holds. These stay
+  // selectable even though they read as taken - they are taken BY this
+  // reservation, and hiding them would silently drop them on save.
+  const ownHallIds: string[] =
+    selectedReservation?.hall?.map((h) => h.hall_id) ?? [];
+  const ownItemIds: string[] =
+    selectedReservation?.equipment?.map((i) => i.item_id) ?? [];
+
+  // Items held by someone else - BORROWED and not part of this reservation.
+  const unavailableItemIds = useMemo(() => {
+    const allItems = itemData?.data ?? [];
+    return new Set<string>(
+      allItems
+        .filter(
+          (i: any) => i.status === "BORROWED" && !ownItemIds.includes(i.item_id),
+        )
+        .map((i: any) => i.item_id),
+    );
+  }, [itemData, selectedReservation]);
+
+  // Halls that cannot be picked for this reservation's date: marked FULL, or
+  // already booked solid 08:30-18:30 by OTHER active reservations. This
+  // reservation's own booking is excluded from the calculation, otherwise a
+  // hall would look full because of the very booking being edited.
+  const unavailableHallIds = useMemo(() => {
+    const allHalls = hallData?.data ?? [];
+    const allReservations = reservationData?.data ?? [];
+    const unavailable = new Set<string>();
+
+    allHalls.forEach((h: any) => {
+      if (h.status === "FULL" && !ownHallIds.includes(h.hall_id)) {
+        unavailable.add(h.hall_id);
+      }
+    });
+
+    if (!selectedReservation) return unavailable;
+
+    const dateStr = format(
+      new Date(selectedReservation.date_appointment),
+      "yyyy-MM-dd",
+    );
+
+    const rangesByHall: Record<string, { start: number; end: number }[]> = {};
+
+    allReservations.forEach((res: any) => {
+      if (res.status === "CANCELLED" || res.status === "DECLINED") return;
+      // Skip the reservation being edited - it must not block itself.
+      if (res.reservation_id === selectedReservation.reservation_id) return;
+
+      const resDateStr = format(new Date(res.date_appointment), "yyyy-MM-dd");
+      if (resDateStr !== dateStr) return;
+
+      const start = timeToMinutes(
+        new Date(res.time_from).toTimeString().slice(0, 5),
+      );
+      const end = timeToMinutes(
+        new Date(res.time_to).toTimeString().slice(0, 5),
+      );
+
+      (res.hall ?? []).forEach((h: { hall_id: string }) => {
+        if (!rangesByHall[h.hall_id]) rangesByHall[h.hall_id] = [];
+        rangesByHall[h.hall_id].push({ start, end });
+      });
+    });
+
+    Object.entries(rangesByHall).forEach(([hallId, ranges]) => {
+      if (ownHallIds.includes(hallId)) return;
+
+      const sorted = [...ranges].sort((a, b) => a.start - b.start);
+      const merged: { start: number; end: number }[] = [];
+
+      for (const range of sorted) {
+        const last = merged[merged.length - 1];
+        if (last && range.start <= last.end) {
+          last.end = Math.max(last.end, range.end);
+        } else {
+          merged.push({ ...range });
+        }
+      }
+
+      const bookedAllDay = merged.some(
+        (r) => r.start <= EDIT_BUSINESS_START && r.end >= EDIT_BUSINESS_END,
+      );
+
+      if (bookedAllDay) unavailable.add(hallId);
+    });
+
+    return unavailable;
+  }, [hallData, reservationData, selectedReservation]);
 
   function toggleEditEquipment(id: string) {
     setEditReservationForm((prev) => ({
@@ -398,7 +504,10 @@ export default function ReservationPage() {
       toast.dismiss(loadingToast);
 
       if (!res.ok) {
-        toast.error("Failed to update reservation");
+        // Show the server's reason (e.g. an item was claimed mid-edit) so the
+        // user knows what to change instead of a blank failure.
+        toast.error(data?.error ?? "Failed to update reservation");
+        queryClient.invalidateQueries({ queryKey: ["item"], exact: false });
         console.log("Error:", data);
         return;
       }
@@ -412,6 +521,9 @@ export default function ReservationPage() {
         queryKey: ["hallReservation"],
         exact: false,
       });
+
+      // Equipment may have been released or claimed by this edit.
+      queryClient.invalidateQueries({ queryKey: ["item"], exact: false });
     } catch (err) {
       await new Promise((r) => setTimeout(r, 1500));
       toast.dismiss(loadingToast);
@@ -549,6 +661,10 @@ export default function ReservationPage() {
         queryKey: ["hallReservation"],
         exact: false,
       });
+
+      // Declining or cancelling returns the held equipment to OPEN, so the
+      // item list on screen is now stale.
+      queryClient.invalidateQueries({ queryKey: ["item"], exact: false });
     } catch (err) {
       await new Promise((r) => setTimeout(r, 1500));
       toast.dismiss(loadingToast);
@@ -654,6 +770,7 @@ export default function ReservationPage() {
   });
 
   function getAvailableActions(reservationStatus: HallReservation["status"]) {
+    // A fresh request: every action is still on the table.
     if (reservationStatus === "PENDING") {
       return {
         view: true,
@@ -665,7 +782,13 @@ export default function ReservationPage() {
       };
     }
 
-    if (reservationStatus === "FOR_REVIEW") {
+    // A pending cancellation request. There is no Approve here - approving the
+    // request IS the Cancel button, which ends the booking and releases its
+    // equipment. Decline rejects the request and the booking stands.
+    if (
+      reservationStatus === "FOR_REVIEW" ||
+      reservationStatus === "FOR_APPROVAL"
+    ) {
       return {
         view: true,
         edit: true,
@@ -676,18 +799,21 @@ export default function ReservationPage() {
       };
     }
 
-    if (reservationStatus === "FOR_APPROVAL") {
+    // Already approved: an admin may still correct details or call it off,
+    // but there is nothing left to approve or decline. Regular users cannot
+    // edit an approved booking - that gate lives in the user page.
+    if (reservationStatus === "APPROVED") {
       return {
         view: true,
         edit: true,
         approve: false,
-        decline: true,
+        decline: false,
         cancel: true,
         delete: true,
       };
     }
 
-    // APPROVED, DECLINED, CANCELLED (and any other/unknown status) — view + delete only
+    // DECLINED, CANCELLED, DONE — finished. Only viewing and deleting remain.
     return {
       view: true,
       edit: false,
@@ -733,7 +859,7 @@ export default function ReservationPage() {
     <div className="h-full flex flex-col gap-5">
       <div className="flex flex-col lg:flex-row items-center justify-between">
         <div>
-          <p className="text-lg font-semibold">Hall Reservation</p>
+          <h1 className="page-title">Hall Reservation</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Manage Employee Reservation
           </p>
@@ -828,7 +954,7 @@ export default function ReservationPage() {
                     colSpan={8}
                     className="text-center py-10 text-muted-foreground"
                   >
-                    No reservation found
+                    <EmptyState title="No reservation found" description="Try a different search or status filter." />
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -905,10 +1031,7 @@ export default function ReservationPage() {
                         <TableCell>{reservation.attendees_qty}</TableCell>
 
                         <TableCell>
-                          {reservation.status
-                            .toLowerCase()
-                            .replace(/_/g, " ")
-                            .replace(/\b\w/g, (char) => char.toUpperCase())}
+                          <StatusBadge status={reservation.status} />
                         </TableCell>
 
                         <TableCell>
@@ -1080,7 +1203,7 @@ export default function ReservationPage() {
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <Card className="w-fit max-w-lg max-h-[85vh] overflow-y-auto relative">
+              <Card className="w-full max-w-xl max-h-[85vh] overflow-y-auto relative">
                 <Button
                   variant="ghost"
                   size="icon"
@@ -1249,95 +1372,140 @@ export default function ReservationPage() {
                 </CardContent>
 
                 <div className="flex flex-col gap-2 p-4 pt-0">
-                  <div className="flex flex-col lg:flex-row gap-2">
-                    <Button
-                      className="w-90 bg-green-800 rounded-sm py-5 text-white font-medium"
-                      disabled={
-                        !actions.edit ||
-                        !isReservationActionable(selectedReservation)
-                      }
-                      onClick={() => {
-                        setOpenReservation(false);
-                        setEditReservationForm({
-                          purpose: selectedReservation.purpose,
-                          attendees_qty: String(
-                            selectedReservation.attendees_qty,
-                          ),
-                          hall_type: selectedReservation.hall_type,
-                          equipment: selectedReservation.equipment.map(
-                            (e) => e.item_id,
-                          ),
-                          hall: selectedReservation.hall.map((h) => h.hall_id),
-                          time_from: new Date(selectedReservation.time_from)
-                            .toTimeString()
-                            .slice(0, 5),
-                          time_to: new Date(selectedReservation.time_to)
-                            .toTimeString()
-                            .slice(0, 5),
-                          other_request:
-                            selectedReservation.other_request ?? "",
-                        });
-                        setOpenReservationEditForm(true);
-                      }}
-                    >
-                      Edit Reservation
-                    </Button>
+                  {(() => {
+                    // Buttons are hidden, not just dimmed, so the card only
+                    // offers what this status actually allows. `actions` comes
+                    // from getAvailableActions, the same source the table's
+                    // dropdown uses.
+                    const actionable =
+                      isReservationActionable(selectedReservation);
 
-                    <Button
-                      className="w-full lg:w-20 bg-red-600 rounded-sm py-5 text-white font-medium"
-                      onClick={() => {
-                        setSelectedReservation(selectedReservation);
-                        setOpenReservationDialog(true);
-                      }}
-                    >
-                      <Trash className="h-4 w-4 text-white" />
-                      <p className="block lg:hidden">Delete</p>
-                    </Button>
-                  </div>
+                    const deleteButton = (
+                      <Button
+                        className="w-full lg:w-20 bg-red-600 rounded-sm py-5 text-white font-medium"
+                        onClick={() => {
+                          setSelectedReservation(selectedReservation);
+                          setOpenReservationDialog(true);
+                        }}
+                      >
+                        <Trash className="h-4 w-4 text-white" />
+                        <p className="block lg:hidden">Delete</p>
+                      </Button>
+                    );
 
-                  <div className="flex flex-col lg:flex-row justify-evenly gap-2">
-                    <Button
-                      className="w-full lg:w-auto bg-green-600 rounded-sm py-5 text-white font-medium"
-                      disabled={
-                        !actions.approve ||
-                        !isReservationActionable(selectedReservation)
-                      }
-                      onClick={() => {
-                        setOpenActionDialog(true);
-                        setAction("Approve");
-                      }}
-                    >
-                      Approve
-                    </Button>
+                    const statusButtons = [
+                      actions.approve && (
+                        <Button
+                          key="approve"
+                          className="w-full lg:flex-1 bg-green-600 rounded-sm py-5 text-white font-medium"
+                          disabled={!actionable}
+                          onClick={() => {
+                            setOpenActionDialog(true);
+                            setAction("Approve");
+                          }}
+                        >
+                          Approve
+                        </Button>
+                      ),
+                      actions.decline && (
+                        <Button
+                          key="decline"
+                          className="w-full lg:flex-1 bg-red-600 rounded-sm py-5 text-white font-medium"
+                          disabled={!actionable}
+                          onClick={() => {
+                            setOpenActionDialog(true);
+                            setAction("Decline");
+                          }}
+                        >
+                          Decline
+                        </Button>
+                      ),
+                      actions.cancel && (
+                        <Button
+                          key="cancel"
+                          className="w-full lg:flex-1 bg-yellow-600 rounded-sm py-5 text-white font-medium"
+                          disabled={!actionable}
+                          onClick={() => {
+                            setOpenActionDialog(true);
+                            setAction("Cancel");
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      ),
+                    ].filter(Boolean);
 
-                    <Button
-                      className="w-full lg:w-auto bg-red-600 rounded-sm py-5 text-white font-medium"
-                      disabled={
-                        !actions.decline ||
-                        !isReservationActionable(selectedReservation)
-                      }
-                      onClick={() => {
-                        setOpenActionDialog(true);
-                        setAction("Decline");
-                      }}
-                    >
-                      Decline
-                    </Button>
+                    return (
+                      <>
+                        {actions.edit && (
+                          <div className="flex flex-col lg:flex-row gap-2">
+                            <Button
+                              className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                              disabled={!actionable}
+                              onClick={() => {
+                                setOpenReservation(false);
+                                setEditReservationForm({
+                                  purpose: selectedReservation.purpose,
+                                  attendees_qty: String(
+                                    selectedReservation.attendees_qty,
+                                  ),
+                                  hall_type: selectedReservation.hall_type,
+                                  equipment:
+                                    selectedReservation.equipment.map(
+                                      (e) => e.item_id,
+                                    ),
+                                  hall: selectedReservation.hall.map(
+                                    (h) => h.hall_id,
+                                  ),
+                                  time_from: new Date(
+                                    selectedReservation.time_from,
+                                  )
+                                    .toTimeString()
+                                    .slice(0, 5),
+                                  time_to: new Date(
+                                    selectedReservation.time_to,
+                                  )
+                                    .toTimeString()
+                                    .slice(0, 5),
+                                  other_request:
+                                    selectedReservation.other_request ?? "",
+                                });
+                                setOpenReservationEditForm(true);
+                              }}
+                            >
+                              Edit Reservation
+                            </Button>
 
-                    <Button
-                      className="w-full lg:w-auto bg-yellow-600 rounded-sm py-5 text-white font-medium"
-                      disabled={
-                        !actions.cancel ||
-                        !isReservationActionable(selectedReservation)
-                      }
-                      onClick={() => {
-                        setOpenActionDialog(true);
-                        setAction("Cancel");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
+                            {deleteButton}
+                          </div>
+                        )}
+
+                        {statusButtons.length > 0 && (
+                          <div className="flex flex-col lg:flex-row gap-2">
+                            {statusButtons}
+                            {/* Delete rides along here when there is no Edit
+                                row above it, so it is never a lone small
+                                button on its own line. */}
+                            {!actions.edit && deleteButton}
+                          </div>
+                        )}
+
+                        {/* Nothing left to act on - Delete stands alone. */}
+                        {!actions.edit && statusButtons.length === 0 && (
+                          <Button
+                            className="w-full bg-red-600 rounded-sm py-5 text-white font-medium"
+                            onClick={() => {
+                              setSelectedReservation(selectedReservation);
+                              setOpenReservationDialog(true);
+                            }}
+                          >
+                            <Trash className="h-4 w-4 text-white" />
+                            <p className="ml-2">Delete</p>
+                          </Button>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               </Card>
             </div>
@@ -1350,7 +1518,7 @@ export default function ReservationPage() {
         onOpenChange={setOpenReservationEditForm}
       >
         <SheetContent side="right" className="overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Reservation
             </SheetTitle>
@@ -1416,13 +1584,17 @@ export default function ReservationPage() {
                   </p>
                 ) : (
                   hallData?.data?.map(
-                    (item: { hall_id: string; hall_name: string }) => (
+                    (item: { hall_id: string; hall_name: string }) => {
+                      const taken = unavailableHallIds.has(item.hall_id);
+
+                      return (
                       <div
                         key={item.hall_id}
                         className="flex items-center gap-1"
                       >
                         <Checkbox
                           id={`edit-hall-${item.hall_id}`}
+                          disabled={taken}
                           checked={editReservationForm.hall.includes(
                             item.hall_id,
                           )}
@@ -1430,12 +1602,20 @@ export default function ReservationPage() {
                         />
                         <label
                           htmlFor={`edit-hall-${item.hall_id}`}
-                          className="font-normal cursor-pointer"
+                          className={
+                            taken
+                              ? "font-normal text-red-500 cursor-not-allowed"
+                              : "font-normal cursor-pointer"
+                          }
                         >
                           {item.hall_name}
+                          {taken && (
+                            <span className="text-xs"> (Not available)</span>
+                          )}
                         </label>
                       </div>
-                    ),
+                      );
+                    },
                   )
                 )}
               </div>
@@ -1450,13 +1630,17 @@ export default function ReservationPage() {
                   </p>
                 ) : (
                   itemData?.data?.map(
-                    (item: { item_id: string; item_name: string }) => (
+                    (item: { item_id: string; item_name: string }) => {
+                      const taken = unavailableItemIds.has(item.item_id);
+
+                      return (
                       <div
                         key={item.item_id}
                         className="flex items-center gap-2"
                       >
                         <Checkbox
                           id={`edit-equipment-${item.item_id}`}
+                          disabled={taken}
                           checked={editReservationForm.equipment.includes(
                             item.item_id,
                           )}
@@ -1466,12 +1650,20 @@ export default function ReservationPage() {
                         />
                         <label
                           htmlFor={`edit-equipment-${item.item_id}`}
-                          className="font-normal cursor-pointer"
+                          className={
+                            taken
+                              ? "font-normal text-red-500 cursor-not-allowed"
+                              : "font-normal cursor-pointer"
+                          }
                         >
                           {item.item_name}
+                          {taken && (
+                            <span className="text-xs"> (Borrowed)</span>
+                          )}
                         </label>
                       </div>
-                    ),
+                      );
+                    },
                   )
                 )}
               </div>
@@ -1542,7 +1734,7 @@ export default function ReservationPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateReservation}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Reservation
             </Button>

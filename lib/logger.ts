@@ -7,6 +7,9 @@ type LogInput = {
   changes?: string;
   reservation_type?: string;
   reservationId?: string | null;
+  // OB reservations live in their own table, so their logs link through a
+  // separate column - reservationId only points at HallReservation.
+  obReservationId?: string | null;
   userId?: string | null;
 };
 
@@ -26,6 +29,7 @@ export async function writeLog(data: LogInput) {
         changes: data.changes,
         reservation_type: data.reservation_type,
         reservationId: data.reservationId ?? undefined,
+        obReservationId: data.obReservationId ?? undefined,
         userId: data.userId,
       },
     });

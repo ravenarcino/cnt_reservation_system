@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { noworkdayType } from "@prisma/client";
+import { noworkdayType, Type } from "@prisma/client";
 
 export async function DELETE(
   req: Request,
@@ -84,6 +84,11 @@ export async function PATCH(
         date: new Date(body.date),
         description: body.description,
         type: body.type as noworkdayType,
+        // Only set when the caller sends it, so an edit that omits it leaves
+        // the entry on whichever calendar it already belongs to.
+        ...(body.nwd_type === "HALL" || body.nwd_type === "OB"
+          ? { nwd_type: body.nwd_type as Type }
+          : {}),
         updatedAt: new Date(),
       },
     });

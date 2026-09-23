@@ -11,6 +11,9 @@ import {
   FileText,
   Building,
   Calendar,
+  Car,
+  IdCard,
+  CalendarOff,
 } from "lucide-react";
 
 export const superAdminNav = [
@@ -29,7 +32,7 @@ export const superAdminNav = [
       },
       {
         title: "OB",
-        url: "/super_admin/hall-reservation",
+        url: "/super_admin/ob-reservation",
       },
     ],
   },
@@ -49,9 +52,28 @@ export const superAdminNav = [
     icon: <Building />,
   },
   {
+    title: "Vehicles",
+    url: "/super_admin/vehicle-management",
+    icon: <Car />,
+  },
+  {
+    title: "Drivers",
+    url: "/super_admin/driver-management",
+    icon: <IdCard />,
+  },
+  {
     title: "Calendar",
-    url: "/super_admin/calendar-management",
     icon: <Calendar />,
+    items: [
+      {
+        title: "Hall",
+        url: "/super_admin/calendar-management",
+      },
+      {
+        title: "OB",
+        url: "/super_admin/ob-calendar-management",
+      },
+    ],
   },
   {
     title: "Reports",
@@ -144,6 +166,84 @@ export const hallAdminNav = [
   {
     title: "Logs",
     url: "/hall_admin/logs",
+    icon: <FileText />,
+  },
+  {
+    title: "Logout",
+    url: "/auth/login",
+    icon: <LogOut />,
+    isLogout: true,
+  },
+];
+
+export const obAdminNav = [
+  {
+    title: "Dashboard",
+    url: "/ob_admin/dashboard",
+    icon: <LayoutDashboard />,
+  },
+  {
+    title: "OB Reservation",
+    url: "/ob_admin/ob-reservation",
+    icon: <Ticket />,
+  },
+  {
+    title: "Vehicles",
+    url: "/ob_admin/vehicle-management",
+    icon: <Car />,
+  },
+  {
+    title: "Drivers",
+    url: "/ob_admin/driver-management",
+    icon: <IdCard />,
+  },
+  {
+    title: "Calendar",
+    url: "/ob_admin/calendar-management",
+    icon: <Calendar />,
+  },
+  {
+    title: "Reports",
+    url: "/ob_admin/report",
+    icon: <BarChart3 />,
+  },
+  {
+    title: "General",
+    url: "/ob_admin/general",
+    icon: <Settings />,
+  },
+  {
+    title: "Logs",
+    url: "/ob_admin/logs",
+    icon: <FileText />,
+  },
+  {
+    title: "Logout",
+    url: "/auth/login",
+    icon: <LogOut />,
+    isLogout: true,
+  },
+];
+
+export const driverNav = [
+  {
+    title: "My Trips",
+    url: "/driver/dashboard",
+    icon: <Car />,
+  },
+  {
+    title: "Day Off",
+    url: "/driver/dayoff",
+    icon: <CalendarOff />,
+  },
+  {
+    title: "General",
+    url: "/driver/general",
+    icon: <Settings />,
+  },
+  {
+    title: "Logs",
+    url: "/driver/logs",
     icon: <FileText />,
   },
   {

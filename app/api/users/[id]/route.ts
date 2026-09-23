@@ -2,39 +2,44 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-// import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { writeLog } from "@/lib/logger";
+
+const USER_ADMIN_ROLES = ["SUPER_ADMIN", "IT_ADMIN"];
 
 export async function DELETE(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  // const session = await auth();
-//   if (!session || session.user?.systemRole !== "IT_ADMIN") {
-//     return Response.json({ error: "Unauthorized" }, { status: 403 });
-//   }
+  const session = await getServerSession(authOptions);
+  if (!session || !USER_ADMIN_ROLES.includes(session.user?.systemRole)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   const { id } = await params;
-  const body = await req.json();
+  // The actor is the signed-in admin, never a value the client sends.
+  const actorId = session.user.userId;
 
   try {
     // Soft delete the tenant
     const deletedUser = await prisma.users.update({
       where: { user_id: id },
       data: {
-        // deletedBy: session.user?.user_id,
-        deletedBy: body.deletedBy, //for now
+        deletedBy: actorId,
         deletedAt: new Date(),
       },
     });
 
-    const logs = await prisma.logs.create({
-      data: {
-        log_id: `LOG-${nanoid(10)}`,
-        event_type: "DELETED",
-        event: "Delete User",
-        changes: `User account deleted by ${body.deletedBy ?? "unknown"}`,
-        reservation_type: "Info",
-        userId: id,
-      },
+    // writeLog is best-effort and swallows failures. That matters here: the
+    // environment admin account has no Users row, so a direct logs.create
+    // would hit a foreign-key error and fail an otherwise successful delete.
+    const logs = await writeLog({
+      event_type: "DELETED",
+      event: "Delete User",
+      changes: `User account "${deletedUser.name}" deleted`,
+      reservation_type: "Info",
+      userId: actorId,
     });
 
     return NextResponse.json({ success: true, deletedUser, logs });
@@ -52,11 +57,13 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-//   const session = await auth();
-//   if (!session || session.user?.systemRole !== "IT_ADMIN") {
-//     return Response.json({ error: "Unauthorized" }, { status: 403 });
-//   }
+  const session = await getServerSession(authOptions);
+  if (!session || !USER_ADMIN_ROLES.includes(session.user?.systemRole)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   const { id } = await params;
+  const actorId = session.user.userId;
 
   try {
     const body = await req.json();
@@ -75,15 +82,12 @@ export async function PATCH(
       },
     });
 
-    const logs = await prisma.logs.create({
-      data: {
-        log_id: `LOG-${nanoid(10)}`,
-        event_type: "UPDATED",
-        event: "Update User Info",
-        changes: "User account details updated",
-        reservation_type: "Info",
-        userId: id,
-      },
+    const logs = await writeLog({
+      event_type: "UPDATED",
+      event: "Update User Info",
+      changes: `User account "${updated.name}" details updated`,
+      reservation_type: "Info",
+      userId: actorId,
     });
 
     return NextResponse.json({

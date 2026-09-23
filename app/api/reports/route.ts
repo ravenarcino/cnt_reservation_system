@@ -16,6 +16,12 @@ export async function GET(req: Request) {
   const from = searchParams.get("from");
   const to = searchParams.get("to");
 
+  // Optional calendar scope. The hall admin only deals with hall closures, so
+  // its pages ask for HALL and never see OB entries in the count. Omitting it
+  // returns every calendar, which is what the super admin wants.
+  const nwdType = searchParams.get("nwd_type");
+  const isValidNwdType = nwdType === "HALL" || nwdType === "OB";
+
   // Build an inclusive date range filter. `to` is pushed to end-of-day.
   const start = from ? new Date(from) : null;
   const end = to ? new Date(to) : null;
@@ -46,6 +52,20 @@ export async function GET(req: Request) {
       orderBy: { date_appointment: "desc" },
     });
 
+    // OB trips - scoped out super-admin-deleted ones, filtered by departure.
+    const obReservations = await prisma.obReservation.findMany({
+      where: {
+        deletedBySuperAdminAt: null,
+        ...(rangeFor("time_from") as Prisma.ObReservationWhereInput),
+      },
+      include: {
+        vehicle: { select: { vehicle_id: true, vehicle_name: true } },
+        drivers: { select: { driver_id: true, driver_name: true } },
+        ob_user: { select: { name: true } },
+      },
+      orderBy: { time_from: "desc" },
+    });
+
     // Logs — all users, filter by createdAt
     const logs = await prisma.logs.findMany({
       where: {
@@ -59,6 +79,7 @@ export async function GET(req: Request) {
     const nonWorkingDays = await prisma.no_Work_Days.findMany({
       where: {
         deletedAt: null,
+        ...(isValidNwdType && { nwd_type: nwdType as "HALL" | "OB" }),
         ...(rangeFor("date") as Prisma.No_Work_DaysWhereInput),
       },
       orderBy: { date: "asc" },
@@ -69,6 +90,7 @@ export async function GET(req: Request) {
         success: true,
         data: {
           reservations,
+          obReservations,
           logs,
           nonWorkingDays,
         },

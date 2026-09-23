@@ -24,8 +24,10 @@ model Users {
   resetToken       String?
   resetTokenExpiry DateTime?
   reservations HallReservation[] @relation("UserHallReservation")
+  ob_reservations ObReservation[] @relation("UserObReservation")
   logs         Logs[]            @relation("UserInfoLog")
   no_work_days No_Work_Days[]    @relation("NonWorkingDayRequest")
+  driver       Driver?           @relation("DriverAccount")
 }
 
 model EquipmentType {
@@ -121,6 +123,79 @@ model HallCancellation {
   deletedBy          String?
 }
 
+model VehicleType {
+  id         Int       @id @default(autoincrement())
+  type_id    String    @unique
+  type       String
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  deletedAt  DateTime?
+  deletedBy  String?
+  vehicles   Vehicle[]
+}
+
+model Vehicle {
+  id             Int             @id @default(autoincrement())
+  vehicle_id     String          @unique
+  vehicle_name   String
+  vehicle_brand  String?
+  plate_number   String?
+  capacity       Int?
+  vehicle_type   String
+  status         vehicleStatus   @default(AVAILABLE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  deletedBy      String?
+  vehicleType    VehicleType     @relation(fields: [vehicle_type], references: [type_id])
+  reservations   ObReservation[] @relation("VehicleToObReservation")
+}
+
+model ObReservation {
+  id                    Int               @id @default(autoincrement())
+  ob_id                 String            @unique
+  userId                String
+  purpose               String
+  destination           String
+  passengers_qty        Int
+  date_departure        DateTime
+  date_return           DateTime
+  time_from             DateTime
+  time_to               DateTime
+  driver_name           String?
+  other_request         String?
+  status                reservationStatus @default(PENDING)
+  notifyUser            Boolean           @default(false)
+  readByUser            Boolean           @default(false)
+  readByObAdmin         Boolean           @default(false)
+  readByIT              Boolean           @default(false)
+  readBySuperAdmin      Boolean           @default(false)
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  deletedByUserAt       DateTime?
+  deletedByObAdminAt    DateTime?
+  deletedByITAt         DateTime?
+  deletedBySuperAdminAt DateTime?
+  ob_user               Users             @relation("UserObReservation", fields: [userId], references: [user_id])
+  user_ob_log           Logs[]            @relation("UserObLog")
+  vehicle               Vehicle[]         @relation("VehicleToObReservation")
+  drivers               Driver[]          @relation("DriverToObReservation")
+  cancellation          ObCancellation?
+}
+
+model ObCancellation {
+  id              Int           @id @default(autoincrement())
+  cancellation_id String        @unique
+  reason          String?
+  file_name       String?
+  path            String?
+  obReservationId String        @unique
+  obReservation   ObReservation @relation(fields: [obReservationId], references: [ob_id])
+  createdAt       DateTime      @default(now())
+  deletedAt       DateTime?
+  deletedBy       String?
+}
+
 model Logs {
   id                     Int              @id @default(autoincrement())
   log_id                 String           @unique
@@ -129,10 +204,12 @@ model Logs {
   changes                String?
   userId                 String
   reservationId          String?
+  obReservationId        String?
   reservation_type       String?
   createdAt              DateTime         @default(now())
   deletedAt              DateTime?
   user_hall_log          HallReservation? @relation("UserHallLog", fields: [reservationId], references: [reservation_id])
+  user_ob_log            ObReservation?   @relation("UserObLog", fields: [obReservationId], references: [ob_id])
   user_personal_info_log Users            @relation("UserInfoLog", fields: [userId], references: [user_id])
 } 
 
@@ -141,6 +218,7 @@ model No_Work_Days {
   nwd_id                 String           @unique
   date                   DateTime
   description            String
+  nwd_type               Type @default(HALL)
   type                   noworkdayType @default(CUSTOM)
   userId                 String
   createdAt              DateTime         @default(now())
@@ -149,10 +227,59 @@ model No_Work_Days {
   creator                Users            @relation("NonWorkingDayRequest", fields: [userId], references: [user_id])
 }
 
+model Driver {
+  id             Int             @id @default(autoincrement())
+  driver_id      String          @unique
+  driver_name    String
+  contact_number String?
+  status         driverStatus    @default(AVAILABLE)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+  deletedBy      String?
+  reservations   ObReservation[] @relation("DriverToObReservation")
+  // Login account of the driver (a Users row with systemRole DRIVER).
+  userId         String?         @unique
+  user           Users?          @relation("DriverAccount", fields: [userId], references: [user_id])
+  day_offs       DriverDayOff[]
+}
+
+// Day-off request filed by a driver. Once APPROVED the driver cannot be
+// picked for an OB trip that overlaps date_from..date_to (whole days).
+model DriverDayOff {
+  id         Int           @id @default(autoincrement())
+  dayoff_id  String        @unique
+  driverId   String
+  driver     Driver        @relation(fields: [driverId], references: [driver_id])
+  date_from  DateTime
+  date_to    DateTime
+  reason     String
+  status     dayOffStatus  @default(PENDING)
+  decidedBy  String?
+  decidedAt  DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  deletedAt  DateTime?
+}
+
+enum dayOffStatus {
+  PENDING
+  APPROVED
+  DECLINED
+  CANCELLED
+}
+
+enum driverStatus {
+  AVAILABLE
+  ON_LEAVE
+}
+
 enum userSystemRole {
   USER
   IT_ADMIN
   HALL_ADMIN
+  OB_ADMIN
+  DRIVER
   SUPER_ADMIN
 }
 
@@ -185,4 +312,15 @@ enum noworkdayType {
   CUSTOM
   HOLIDAY
   DAYOFF
+}
+
+enum Type {
+  HALL
+  OB
+}
+
+enum vehicleStatus {
+  AVAILABLE
+  IN_USE
+  MAINTENANCE
 }

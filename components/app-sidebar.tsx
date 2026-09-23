@@ -22,6 +22,8 @@ import {
   superAdminNav,
   adminNav,
   hallAdminNav,
+  obAdminNav,
+  driverNav,
   userNav,
 } from "@/components/navigation";
 
@@ -29,7 +31,7 @@ export function AppSidebar({
   role,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
-  role: "USER" | "IT_ADMIN" | "HALL_ADMIN" | "SUPER_ADMIN";
+  role: "USER" | "IT_ADMIN" | "HALL_ADMIN" | "OB_ADMIN" | "DRIVER" | "SUPER_ADMIN";
 }) {
   const pathname = usePathname();
 
@@ -40,6 +42,10 @@ role === "SUPER_ADMIN"
   ? adminNav
   : role === "HALL_ADMIN"
   ? hallAdminNav
+  : role === "OB_ADMIN"
+  ? obAdminNav
+  : role === "DRIVER"
+  ? driverNav
   : userNav;
 
   return (
@@ -60,9 +66,15 @@ role === "SUPER_ADMIN"
                   />
                 </div> */}
 
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-bold text- text-lg">CNT Reservation</span>
-                  <span className="truncate text-xs">Reservation System</span>
+                <div className="flex flex-col gap-1 text-left leading-tight">
+                  <img
+                    src="/cnt-logo.png"
+                    alt="CNT Promo & Ads Specialists, Inc."
+                    width={1050}
+                    height={240}
+                    className="h-7 w-auto"
+                  />
+                  <span className="truncate text-xs text-muted-foreground">Reservation System</span>
                 </div>
               </a>
             </SidebarMenuButton>

@@ -28,6 +28,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { ObAnalytics, useObStats, type ObTripRow } from "@/components/ob/ob-analytics";
 
 type Reservation = {
   reservation_id: string;
@@ -202,7 +203,7 @@ function VBarChart({
         >
           <span className="text-[10px] text-muted-foreground">{d.value}</span>
           <div
-            className="w-full rounded-t bg-green-700 transition-all"
+            className="w-full rounded-t bg-brand transition-all"
             style={{ height: `${(d.value / max) * 100}%`, minHeight: "2px" }}
           />
           <span className="text-[10px] text-muted-foreground truncate w-full text-center">
@@ -216,23 +217,26 @@ function VBarChart({
 
 function StatCard({
   title,
+  hint,
   value,
   icon,
 }: {
   title: string;
+  hint?: string;
   value: number | string;
   icon: React.ReactNode;
 }) {
   return (
     <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-tight">
           {title}
         </CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-3xl font-semibold tabular-nums tracking-tight">{value}</div>
+        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -260,6 +264,9 @@ export default function ReportPage() {
   });
 
   const reservations: Reservation[] = data?.data?.reservations ?? [];
+  // OB trips in the same date range (filtered by departure).
+  const obTrips: ObTripRow[] = data?.data?.obReservations ?? [];
+  const obStats = useObStats(obTrips);
   const logs: Log[] = data?.data?.logs ?? [];
   const nonWorkingDays: NoWorkDay[] = data?.data?.nonWorkingDays ?? [];
 
@@ -450,6 +457,60 @@ export default function ReportPage() {
       ),
     );
 
+    lines.push("");
+    lines.push(esc("OB Trips"));
+    lines.push([esc("Total OB Trips"), esc(obStats.total)].join(","));
+    lines.push([esc("Pending"), esc(obStats.pending)].join(","));
+    lines.push("");
+
+    lines.push(esc("OB Trips by Status"));
+    obStats.byStatus.forEach((d) =>
+      lines.push([esc(d.label), esc(d.value)].join(",")),
+    );
+    lines.push("");
+
+    lines.push(esc("Top Vehicles"));
+    obStats.topVehicles.forEach((d) =>
+      lines.push([esc(d.label), esc(d.value)].join(",")),
+    );
+    lines.push("");
+
+    lines.push(esc("Top Destinations"));
+    obStats.topDestinations.forEach((d) =>
+      lines.push([esc(d.label), esc(d.value)].join(",")),
+    );
+    lines.push("");
+
+    lines.push(esc("OB Trip Details"));
+    lines.push(
+      [
+        esc("OB ID"),
+        esc("Purpose"),
+        esc("Destination"),
+        esc("Reserved By"),
+        esc("Vehicles"),
+        esc("Drivers"),
+        esc("Status"),
+        esc("Departure"),
+        esc("Return"),
+      ].join(","),
+    );
+    obTrips.forEach((t) =>
+      lines.push(
+        [
+          esc(t.ob_id),
+          esc(t.purpose),
+          esc(t.destination),
+          esc(t.ob_user?.name ?? ""),
+          esc((t.vehicle ?? []).map((v) => v.vehicle_name).join(" | ")),
+          esc((t.drivers ?? []).map((dr) => dr.driver_name).join(" | ")),
+          esc(t.status),
+          esc(format(new Date(t.time_from), "yyyy-MM-dd HH:mm")),
+          esc(format(new Date(t.time_to), "yyyy-MM-dd HH:mm")),
+        ].join(","),
+      ),
+    );
+
     const blob = new Blob([lines.join("\n")], {
       type: "text/csv;charset=utf-8;",
     });
@@ -468,7 +529,7 @@ export default function ReportPage() {
 
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
         <div>
-          <p className="text-lg font-semibold">Reports</p>
+          <h1 className="page-title">Reports</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Overview of reservations, usage, activity and non-working days
           </p>
@@ -534,7 +595,7 @@ export default function ReportPage() {
           </Button>
           <Button
             onClick={() => window.print()}
-            className="gap-2 bg-green-800 text-white"
+            className="gap-2 bg-brand text-white"
           >
             <Printer className="h-4 w-4" />
             Print / PDF
@@ -550,7 +611,7 @@ export default function ReportPage() {
       ) : (
         <>
           {/* KPI cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             <StatCard
               title="Total Reservations"
               value={kpis.total}
@@ -643,6 +704,12 @@ export default function ReportPage() {
                 <DonutChart data={nwdByType} emptyLabel="No non-working days" />
               </CardContent>
             </Card>
+          </div>
+
+          {/* OB trips in the selected range */}
+          <div className="flex flex-col gap-3 pt-2">
+            <p className="text-base font-semibold">OB Trips</p>
+            <ObAnalytics trips={obTrips} showStats={false} />
           </div>
         </>
       )}

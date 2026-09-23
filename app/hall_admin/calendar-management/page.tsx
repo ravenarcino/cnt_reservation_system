@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
 import React, { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
@@ -101,6 +103,10 @@ type NoWorkDay = {
   type: string;
 };
 
+// Which calendar this page manages. Sent on create/edit and used to filter
+// the list, so HALL and OB never show each other's entries.
+const NWD_TYPE = "HALL";
+
 export default function CalendarPage() {
   const [changeMode, setChangeMode] = useState(false);
   const [calendarView, setCalendarView] = useState("month");
@@ -128,11 +134,12 @@ export default function CalendarPage() {
   });
 
   const { data: nwdData, isLoading: nwdLoading } = useQuery({
-    queryKey: ["nwd", page, search],
+    queryKey: ["nwd", NWD_TYPE, page, search],
     queryFn: async () => {
       const params = new URLSearchParams({
         page: String(page),
         limit: String(limit),
+        nwd_type: NWD_TYPE,
         ...(search && { search }),
       });
 
@@ -151,9 +158,11 @@ export default function CalendarPage() {
 
   // Fetch all non-working days (unpaginated) for the calendar view
   const { data: nwdAllData } = useQuery({
-    queryKey: ["nwd", "all"],
+    queryKey: ["nwd", NWD_TYPE, "all"],
     queryFn: async () => {
-      const res = await fetch(`/api/no_work_days/nwd?limit=1000`);
+      const res = await fetch(
+        `/api/no_work_days/nwd?limit=1000&nwd_type=${NWD_TYPE}`,
+      );
       const json = await res.json();
 
       if (!res.ok) throw new Error(json?.error);
@@ -362,6 +371,7 @@ export default function CalendarPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...nwdForm,
+          nwd_type: NWD_TYPE,
         }),
       });
 
@@ -374,7 +384,7 @@ export default function CalendarPage() {
       setCreating(false);
 
       if (!res.ok) {
-        toast.error("Failed to create non-working day");
+        toast.error(data?.error ?? "Failed to create non-working day");
         console.log("Error: ", data?.error);
         return;
       }
@@ -426,6 +436,7 @@ export default function CalendarPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...editNwdForm,
+          nwd_type: NWD_TYPE,
         }),
       });
 
@@ -507,15 +518,17 @@ export default function CalendarPage() {
     <div className="h-full flex flex-col gap-5">
       <div className="flex flex-col lg:flex-row items-center justify-between">
         <div>
-          <p className="text-lg font-semibold">Calendar Management</p>
+          <h1 className="page-title">
+            Hall Calendar Management
+          </h1>
           <p className="text-sm text-muted-foreground text-wrap">
-            Manage non-working days and dayoff requests
+            Manage non-working days for hall reservations
           </p>
         </div>
         <div className="flex flex-col gap-2 w-full lg:w-fit">
           <Button
             onClick={() => setOpenNwdForm(true)}
-            className="w-full lg:w-fit bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
           >
             + Add Non-working Day
           </Button>
@@ -523,14 +536,14 @@ export default function CalendarPage() {
           {changeMode ? (
             <Button
               onClick={() => setChangeMode(false)}
-              className="w-full bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+              className="w-full bg-brand text-white px-4 py-4 rounded-sm font-medium "
             >
               View Table
             </Button>
           ) : (
             <Button
               onClick={() => setChangeMode(true)}
-              className="w-full bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+              className="w-full bg-brand text-white px-4 py-4 rounded-sm font-medium "
             >
               View Calendar
             </Button>
@@ -607,7 +620,6 @@ export default function CalendarPage() {
           <Tabs defaultValue="nwd" className="w-full">
             <TabsList>
               <TabsTrigger value="nwd">Non Working Days</TabsTrigger>
-              <TabsTrigger value="dr">Dayoff Request</TabsTrigger>
             </TabsList>
             <TabsContent value="nwd">
               <div className="flex-1 overflow-auto rounded-md border">
@@ -630,7 +642,7 @@ export default function CalendarPage() {
                           colSpan={6}
                           className="text-center py-10 text-muted-foreground"
                         >
-                          No non-working days found
+                          <EmptyState title="No non-working days found" description="Add a non-working day to block it on the calendar." />
                         </TableCell>
                       </TableRow>
                     </TableBody>
@@ -759,14 +771,13 @@ export default function CalendarPage() {
                 </PaginationContent>
               </Pagination>
             </TabsContent>
-            <TabsContent value="dr">Change your password here.</TabsContent>
           </Tabs>
         </div>
       )}
 
       <Sheet open={openNwdForm} onOpenChange={setOpenNwdForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Add Non-Working Day
             </SheetTitle>
@@ -834,7 +845,7 @@ export default function CalendarPage() {
             <Button
               onClick={handleCreateNwd}
               disabled={creating}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               {creating ? "Creating..." : "Create Non-Working Day"}
             </Button>
@@ -854,7 +865,7 @@ export default function CalendarPage() {
       {/* View Non-Working Day */}
       <Sheet open={openView} onOpenChange={setOpenView}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Non-Working Day Detail
             </SheetTitle>
@@ -913,7 +924,7 @@ export default function CalendarPage() {
                 }
                 setOpenEditForm(true);
               }}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Edit
             </Button>
@@ -934,7 +945,7 @@ export default function CalendarPage() {
       {/* Edit Non-Working Day */}
       <Sheet open={openEditForm} onOpenChange={setOpenEditForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Non-Working Day
             </SheetTitle>
@@ -1008,7 +1019,7 @@ export default function CalendarPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateNwd}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Non-Working Day
             </Button>

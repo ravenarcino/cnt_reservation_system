@@ -21,6 +21,7 @@ export async function PATCH(
 
     const existingReservation = await prisma.hallReservation.findUnique({
       where: { reservation_id },
+      include: { equipment: true },
     });
 
     if (!existingReservation) {
@@ -44,14 +45,44 @@ export async function PATCH(
     // const timeTo = new Date(appointmentDate);
     // timeTo.setHours(toHours, toMinutes, 0, 0);
 
-    const reservation = await prisma.hallReservation.update({
-      where: { reservation_id },
-      data: {
-        status: body.action,
-        notifyUser: true,
-        readByHallAdmin: true,
-        updatedAt: new Date(),
-      },
+    // DECLINED and CANCELLED end the reservation, so the equipment it was
+    // holding goes back into circulation. Any other status leaves the items
+    // BORROWED - an approved booking still has them.
+    const releasesEquipment =
+      body.action === "DECLINED" || body.action === "CANCELLED";
+
+    const heldItemIds = existingReservation.equipment.map(
+      (item) => item.item_id,
+    );
+
+    const reservation = await prisma.$transaction(async (tx) => {
+      const updated = await tx.hallReservation.update({
+        where: { reservation_id },
+        data: {
+          status: body.action,
+          notifyUser: true,
+          readByHallAdmin: true,
+          updatedAt: new Date(),
+        },
+      });
+
+      if (releasesEquipment && heldItemIds.length > 0) {
+        // Only flip items that this reservation actually holds, and only the
+        // ones still marked BORROWED, so a hand-edit by an admin is not undone.
+        await tx.equipment.updateMany({
+          where: {
+            item_id: { in: heldItemIds },
+            status: "BORROWED",
+            deletedAt: null,
+          },
+          data: {
+            status: "OPEN",
+            updatedAt: new Date(),
+          },
+        });
+      }
+
+      return updated;
     });
 
     const logs = await prisma.logs.create({

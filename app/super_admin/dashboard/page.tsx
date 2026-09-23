@@ -12,6 +12,10 @@ import {
   ClipboardList,
   CalendarX,
   Activity,
+  Plane,
+  Car,
+  IdCard,
+  CalendarCheck,
 } from "lucide-react";
 import {
   Card,
@@ -20,8 +24,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Spinner } from "@/components/ui/spinner";
+import { ObAnalytics, useObStats, type ObTripRow } from "@/components/ob/ob-analytics";
 
 type Reservation = {
+  createdAt?: string;
   reservation_id: string;
   status: string;
   date_appointment: string;
@@ -182,7 +188,7 @@ function VBarChart({
         >
           <span className="text-[10px] text-muted-foreground">{d.value}</span>
           <div
-            className="w-full rounded-t bg-green-700 transition-all"
+            className="w-full rounded-t bg-brand transition-all"
             style={{ height: `${(d.value / max) * 100}%`, minHeight: "2px" }}
           />
           <span className="text-[10px] text-muted-foreground truncate w-full text-center">
@@ -196,11 +202,13 @@ function VBarChart({
 
 function StatCard({
   title,
+  hint,
   value,
   icon,
   href,
 }: {
   title: string;
+  hint?: string;
   value: number | string;
   icon: React.ReactNode;
   href?: string;
@@ -224,20 +232,21 @@ function StatCard({
           : undefined
       }
       className={
-        "shadow-sm" +
+        "shadow-sm h-full" +
         (clickable
-          ? " cursor-pointer transition-all hover:shadow-md hover:border-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-700"
+          ? " cursor-pointer transition-all hover:shadow-md hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
           : "")
       }
     >
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-tight">
           {title}
         </CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-3xl font-semibold tabular-nums tracking-tight">{value}</div>
+        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -284,6 +293,28 @@ export default function SuperAdminDashboard() {
     },
   });
 
+  const { data: vehiclesData } = useQuery({
+    queryKey: ["adminDashboardVehicles"],
+    queryFn: async () => {
+      const res = await fetch(`/api/vehicles/vehicles/vehicle?limit=1`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json;
+    },
+  });
+
+  const { data: driversData } = useQuery({
+    queryKey: ["adminDashboardDrivers"],
+    queryFn: async () => {
+      const res = await fetch(`/api/drivers/driver?limit=1`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json;
+    },
+  });
+
+  const obTrips: ObTripRow[] = reportData?.data?.obReservations ?? [];
+  const obStats = useObStats(obTrips);
   const reservations: Reservation[] = reportData?.data?.reservations ?? [];
   const logs: Log[] = reportData?.data?.logs ?? [];
   const nonWorkingDays = reportData?.data?.nonWorkingDays ?? [];
@@ -301,7 +332,12 @@ export default function SuperAdminDashboard() {
     const today = reservations.filter(
       (r) => format(new Date(r.date_appointment), "yyyy-MM-dd") === todayStr,
     ).length;
-    return { total, pending, today };
+    // Filed in the last 7 days, for the "+N this week" hint.
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const thisWeek = reservations.filter(
+      (r) => r.createdAt && new Date(r.createdAt).getTime() >= weekAgo,
+    ).length;
+    return { total, pending, today, thisWeek };
   }, [reservations]);
 
   const byStatus = useMemo(() => {
@@ -366,7 +402,7 @@ export default function SuperAdminDashboard() {
   return (
     <div className="h-full flex flex-col gap-5">
       <div>
-        <p className="text-lg font-semibold">Dashboard</p>
+        <h1 className="page-title">Dashboard</h1>
         <p className="text-sm text-muted-foreground text-wrap">
           System overview and key metrics
         </p>
@@ -379,44 +415,103 @@ export default function SuperAdminDashboard() {
         </div>
       ) : (
         <>
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-            <StatCard
-              title="Total Reservations"
-              value={kpis.total}
-              icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/hall-reservation"
-            />
-            <StatCard
-              title="Pending Approval"
-              value={kpis.pending}
-              icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/hall-reservation"
-            />
-            <StatCard
-              title="Today's Reservations"
-              value={kpis.today}
-              icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/hall-reservation"
-            />
-            <StatCard
-              title="Total Users"
-              value={totalUsers}
-              icon={<Users className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/user-management"
-            />
-            <StatCard
-              title="Total Halls"
-              value={totalHalls}
-              icon={<Building className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/hall-management"
-            />
-            <StatCard
-              title="Total Equipment"
-              value={totalItems}
-              icon={<ClipboardList className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/item-management"
-            />
+          {/* KPI cards - hall reservations, system, OB */}
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <StatCard
+                title="Total Reservations"
+                hint={`+${kpis.thisWeek} filed this week`}
+                value={kpis.total}
+                icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/hall-reservation"
+              />
+              <StatCard
+                title="Pending Approval"
+                hint={kpis.pending > 0 ? "Needs review" : "All caught up"}
+                value={kpis.pending}
+                icon={<Clock className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/hall-reservation"
+              />
+              <StatCard
+                title="Approved Reservations"
+                value={
+                  reservations.filter((r) => r.status === "APPROVED").length
+                }
+                icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/hall-reservation"
+              />
+              <StatCard
+                title="Today's Reservations"
+                hint={format(new Date(), "EEE, MMM d")}
+                value={kpis.today}
+                icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/hall-reservation"
+              />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <StatCard
+                title="Total Users"
+                value={totalUsers}
+                icon={<Users className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/user-management"
+              />
+              <StatCard
+                title="Total Halls"
+                value={totalHalls}
+                icon={<Building className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/hall-management"
+              />
+              <StatCard
+                title="Total Equipment"
+                value={totalItems}
+                icon={<ClipboardList className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/item-management"
+              />
+              <StatCard
+                title="Non-Working Days"
+                value={nonWorkingDays.length}
+                icon={<CalendarX className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/calendar-management"
+              />
+              <StatCard
+                title="Total Activity Logs"
+                value={logs.length}
+                icon={<Activity className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/logs"
+              />
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <StatCard
+                title="Total OB Trips"
+                value={obStats.total}
+                icon={<Plane className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/ob-reservation"
+              />
+              <StatCard
+                title="Pending OB"
+                value={obStats.pending}
+                icon={<Clock className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/ob-reservation"
+              />
+              <StatCard
+                title="Today's OB Trips"
+                value={obStats.today}
+                icon={<CalendarCheck className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/ob-reservation"
+              />
+              <StatCard
+                title="Total Vehicles"
+                value={vehiclesData?.total ?? 0}
+                icon={<Car className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/vehicle-management"
+              />
+              <StatCard
+                title="Total Drivers"
+                value={driversData?.total ?? 0}
+                icon={<IdCard className="h-4 w-4 text-muted-foreground" />}
+                href="/super_admin/driver-management"
+              />
+            </div>
           </div>
 
           {/* Charts */}
@@ -465,26 +560,17 @@ export default function SuperAdminDashboard() {
             </Card>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <StatCard
-              title="Non-Working Days"
-              value={nonWorkingDays.length}
-              icon={<CalendarX className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/calendar-management"
-            />
-            <StatCard
-              title="Total Activity Logs"
-              value={logs.length}
-              icon={<Activity className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/logs"
-            />
-            <StatCard
-              title="Approved Reservations"
-              value={
-                reservations.filter((r) => r.status === "APPROVED").length
-              }
-              icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
-              href="/super_admin/hall-reservation"
+          {/* OB trips - same cards and charts the OB admin dashboard uses */}
+          <div className="flex flex-col gap-3 pt-2">
+            <p className="text-base font-semibold">OB Trips</p>
+            <ObAnalytics
+              trips={obTrips}
+              vehiclesTotal={vehiclesData?.total ?? 0}
+              driversTotal={driversData?.total ?? 0}
+              basePath="/super_admin"
+              showStats={false}
+              showOverTime={false}
+              showDestinations={false}
             />
           </div>
         </>

@@ -2,15 +2,22 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { nanoid } from "nanoid";
-// import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { writeLog } from "@/lib/logger";
+
+// Roles allowed to administer user accounts. IT_ADMIN is included because the
+// environment admin account signs in with that role and is not a DB record.
+const USER_ADMIN_ROLES = ["SUPER_ADMIN", "IT_ADMIN"];
 import bcrypt from "bcryptjs";
 import { userSystemRole } from "@prisma/client";
 
 export async function POST(req: Request) {
-  //   const session = await auth();
-  //   if (!session || session.user?.systemRole !== "IT_ADMIN") {
-  //     return Response.json({ error: "Unauthorized" }, { status: 403 });
-  //   }
+  const session = await getServerSession(authOptions);
+  if (!session || !USER_ADMIN_ROLES.includes(session.user?.systemRole)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   try {
     const body = await req.json();
 
@@ -27,15 +34,15 @@ export async function POST(req: Request) {
       },
     });
 
-    const logs = await prisma.logs.create({
-      data: {
-        log_id: `LOG-${nanoid(10)}`,
-        event_type: "CREATED",
-        event: "Create User",
-        changes: `User account "${user.name}" created`,
-        reservation_type: "Info",
-        userId: user.user_id,
-      },
+    // Logged against the admin who performed the creation, not against the
+    // account that was just created - otherwise the record reads as though the
+    // new user created themselves.
+    const logs = await writeLog({
+      event_type: "CREATED",
+      event: "Create User",
+      changes: `User account "${user.name}" created`,
+      reservation_type: "Info",
+      userId: session.user.userId,
     });
 
     return NextResponse.json(
@@ -58,10 +65,13 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
-  //   const session = await auth();
-  //   if (!session || session.user?.systemRole !== "IT_ADMIN") {
-  //     return Response.json({ error: "Unauthorized" }, { status: 403 });
-  //   }
+  // Read-only listing. The hall admin dashboard shows a user count from this,
+  // so it stays open to any signed-in user rather than admins only.
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
 
   const page = Number(searchParams.get("page") || 1);

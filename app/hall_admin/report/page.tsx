@@ -202,7 +202,7 @@ function VBarChart({
         >
           <span className="text-[10px] text-muted-foreground">{d.value}</span>
           <div
-            className="w-full rounded-t bg-green-700 transition-all"
+            className="w-full rounded-t bg-brand transition-all"
             style={{ height: `${(d.value / max) * 100}%`, minHeight: "2px" }}
           />
           <span className="text-[10px] text-muted-foreground truncate w-full text-center">
@@ -216,23 +216,26 @@ function VBarChart({
 
 function StatCard({
   title,
+  hint,
   value,
   icon,
 }: {
   title: string;
+  hint?: string;
   value: number | string;
   icon: React.ReactNode;
 }) {
   return (
     <Card className="shadow-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-tight">
           {title}
         </CardTitle>
         {icon}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-3xl font-semibold tabular-nums tracking-tight">{value}</div>
+        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
       </CardContent>
     </Card>
   );
@@ -243,9 +246,11 @@ export default function ReportPage() {
   const [to, setTo] = useState("");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["report", from, to],
+    queryKey: ["report", "HALL", from, to],
     queryFn: async () => {
       const params = new URLSearchParams({
+        // Hall admin reports cover the hall calendar only.
+        nwd_type: "HALL",
         ...(from && { from }),
         ...(to && { to }),
       });
@@ -321,20 +326,6 @@ export default function ReportPage() {
     });
     return Object.entries(counts)
       .map(([label, value]) => ({ label, value, color: "#0f766e" }))
-      .sort((a, b) => b.value - a.value)
-      .slice(0, 8);
-  }, [reservations]);
-
-  // ---- Top equipment ----
-  const topEquipment = useMemo(() => {
-    const counts: Record<string, number> = {};
-    reservations.forEach((r) => {
-      (r.equipment ?? []).forEach((e) => {
-        counts[e.item_name] = (counts[e.item_name] ?? 0) + 1;
-      });
-    });
-    return Object.entries(counts)
-      .map(([label, value]) => ({ label, value, color: "#7c3aed" }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
   }, [reservations]);
@@ -418,10 +409,6 @@ export default function ReportPage() {
     topHalls.forEach((d) => lines.push([esc(d.label), esc(d.value)].join(",")));
     lines.push("");
 
-    lines.push(esc("Top Equipment"));
-    topEquipment.forEach((d) =>
-      lines.push([esc(d.label), esc(d.value)].join(",")),
-    );
     lines.push("");
 
     lines.push(esc("Reservation Details"));
@@ -468,7 +455,7 @@ export default function ReportPage() {
 
       <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-3">
         <div>
-          <p className="text-lg font-semibold">Reports</p>
+          <h1 className="page-title">Reports</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Overview of reservations, usage, activity and non-working days
           </p>
@@ -534,7 +521,7 @@ export default function ReportPage() {
           </Button>
           <Button
             onClick={() => window.print()}
-            className="gap-2 bg-green-800 text-white"
+            className="gap-2 bg-brand text-white"
           >
             <Printer className="h-4 w-4" />
             Print / PDF
@@ -608,15 +595,6 @@ export default function ReportPage() {
               </CardHeader>
               <CardContent>
                 <HBarChart data={topHalls} emptyLabel="No hall usage" />
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm">Top Equipment</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <HBarChart data={topEquipment} emptyLabel="No equipment usage" />
               </CardContent>
             </Card>
 

@@ -7,6 +7,7 @@ import {
 } from "@/components/ui/sidebar";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AppTopbar } from "@/components/app-topbar";
 
 export default function AdminLayout({
   children,
@@ -21,7 +22,7 @@ export default function AdminLayout({
       <SidebarProvider>
         <AppSidebar role="SUPER_ADMIN" />
         <main className="w-full">
-          <SidebarTrigger />
+          <AppTopbar />
           <div className="p-6">{children}</div>
         </main>
       </SidebarProvider>

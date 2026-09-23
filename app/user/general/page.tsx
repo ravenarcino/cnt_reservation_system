@@ -27,10 +27,17 @@ type UserProfile = {
   department: string;
   role: string;
   status: "REGISTERED" | "UNREGISTERED";
-  systemRole: "USER" | "IT_ADMIN" | "HALL_ADMIN" | "SUPER_ADMIN";
+  systemRole: "USER" | "IT_ADMIN" | "HALL_ADMIN" | "OB_ADMIN" | "SUPER_ADMIN";
   createdAt: string;
   updatedAt: string;
 };
+
+// Capitalises the first letter of each word and leaves the rest alone, so a
+// typed "it compliance officer" shows as "It Compliance Officer" while an
+// acronym already written as "IT" stays "IT".
+function toTitleCase(value: string) {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 function formatEnumLabel(value: string) {
   return value
@@ -86,7 +93,7 @@ export default function GeneralPage() {
       name: profile.name ?? "",
       email: profile.email ?? "",
       department: profile.department ?? "",
-      role: profile.role ?? "",
+      role: toTitleCase(profile.role ?? ""),
     });
   }
 
@@ -198,7 +205,7 @@ export default function GeneralPage() {
   return (
     <div className="h-full flex flex-col gap-5">
       <div>
-        <p className="text-lg font-semibold">General</p>
+        <h1 className="page-title">General</h1>
         <p className="text-sm text-muted-foreground text-wrap">
           Manage your account details and security
         </p>
@@ -305,7 +312,7 @@ export default function GeneralPage() {
               <Button
                 onClick={handleUpdateProfile}
                 disabled={savingProfile || profileLoading}
-                className="w-full lg:w-auto bg-green-800 rounded-sm py-5 text-white font-medium"
+                className="w-full lg:w-auto bg-brand rounded-sm py-5 text-white font-medium"
               >
                 {savingProfile ? "Saving..." : "Save Changes"}
               </Button>
@@ -371,7 +378,7 @@ export default function GeneralPage() {
               <Button
                 onClick={handleUpdatePassword}
                 disabled={savingPassword}
-                className="w-full lg:w-auto bg-green-800 rounded-sm py-5 text-white font-medium"
+                className="w-full lg:w-auto bg-brand rounded-sm py-5 text-white font-medium"
               >
                 {savingPassword ? "Saving..." : "Update Password"}
               </Button>

@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
 import { useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery } from "@tanstack/react-query";
@@ -64,6 +66,7 @@ type Log = {
   changes: string | null;
   userId: string;
   reservationId: string | null;
+  obReservationId?: string | null;
   reservation_type: string | null;
   createdAt: string;
 };
@@ -115,7 +118,7 @@ export default function UserActivityPage() {
         !query ||
         log.log_id.toLowerCase().includes(query) ||
         (log.changes ?? "").toLowerCase().includes(query) ||
-        (log.reservationId ?? "").toLowerCase().includes(query) ||
+        (log.reservationId ?? log.obReservationId ?? "").toLowerCase().includes(query) ||
         log.event.toLowerCase().includes(query);
 
       const matchesAction =
@@ -140,7 +143,7 @@ export default function UserActivityPage() {
     <div className="h-full flex flex-col gap-5">
       <div className="flex flex-col lg:flex-row items-center justify-between">
         <div>
-          <p className="text-lg font-semibold">User Activity</p>
+          <h1 className="page-title">User Activity</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Monitor your reservation actions and activities
           </p>
@@ -230,7 +233,7 @@ export default function UserActivityPage() {
                     colSpan={7}
                     className="text-center py-10 text-muted-foreground"
                   >
-                    No activity found
+                    <EmptyState title="No activity found" description="Actions you take will show up here." />
                   </TableCell>
                 </TableRow>
               </TableBody>
@@ -261,7 +264,7 @@ export default function UserActivityPage() {
 
                       <TableCell>{log.event}</TableCell>
 
-                      <TableCell>{log.reservationId ?? "—"}</TableCell>
+                      <TableCell>{log.reservationId ?? log.obReservationId ?? "—"}</TableCell>
 
                       <TableCell>{log.reservation_type ?? "—"}</TableCell>
 
@@ -366,7 +369,7 @@ export default function UserActivityPage() {
                   Reservation ID
                 </label>
                 <p className="font-medium">
-                  {selectedLog.reservationId ?? "—"}
+                  {selectedLog.reservationId ?? selectedLog.obReservationId ?? "—"}
                 </p>
               </div>
 

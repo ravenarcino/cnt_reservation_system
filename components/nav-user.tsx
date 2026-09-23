@@ -25,6 +25,7 @@ import {
   LogOutIcon,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
+import { clearOfflineCache } from "@/components/pwa/pwa";
 import { Spinner } from "./ui/spinner";
 
 export function NavUser() {
@@ -122,7 +123,10 @@ export function NavUser() {
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => signOut({ callbackUrl: "/auth/login" })}
+              onClick={() => {
+                clearOfflineCache();
+                signOut({ callbackUrl: "/auth/login" });
+              }}
             >
               <LogOutIcon className="mr-2 h-4 w-4" />
               Log out

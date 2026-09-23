@@ -19,6 +19,7 @@ export async function GET() {
         userId: user.userId,
         OR: [
           { reservation_type: "Hall" },
+          { reservation_type: "OB" },
           { reservation_type: "Info" },
           { reservation_type: "Calendar" },
         ],

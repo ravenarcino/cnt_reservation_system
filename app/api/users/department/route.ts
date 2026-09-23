@@ -1,8 +1,16 @@
 import { prisma } from "@/lib/prisma";
-// import { auth } from "@/lib/auth";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { userSystemRole } from "@prisma/client";
 
 export async function GET(req: Request) {
+  // Feeds filter dropdowns on admin pages - any signed-in user may read it,
+  // but it is not public.
+  const session = await getServerSession(authOptions);
+  if (!session) {
+    return Response.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
   const { searchParams } = new URL(req.url);
 
   const departmentsOnly = searchParams.get("departmentsOnly");

@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -420,7 +422,7 @@ export default function UserPage() {
     <div className="h-full flex flex-col gap-5">
       <div className="flex flex-col lg:flex-row items-center justify-between">
         <div>
-          <p className="text-lg font-semibold">Employee Management</p>
+          <h1 className="page-title">Employee Management</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Manage employee accounts
           </p>
@@ -428,7 +430,7 @@ export default function UserPage() {
         <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
           <Button
             onClick={() => setOpenForm(true)}
-            className="w-full lg:w-fit bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
           >
             + Add Employee
           </Button>
@@ -526,7 +528,7 @@ export default function UserPage() {
                       colSpan={8}
                       className="text-center py-10 text-muted-foreground"
                     >
-                      No staff found
+                      <EmptyState title="No staff found" description="Try a different search or filter." />
                     </TableCell>
                   </TableRow>
                 </TableBody>
@@ -666,7 +668,7 @@ export default function UserPage() {
 
       <Sheet open={openForm} onOpenChange={setOpenForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Add New Employee
             </SheetTitle>
@@ -746,6 +748,8 @@ export default function UserPage() {
                   <SelectItem value="USER">User</SelectItem>
                   <SelectItem value="IT_ADMIN">IT Admin</SelectItem>
                   <SelectItem value="HALL_ADMIN">Hall Admin</SelectItem>
+                  <SelectItem value="OB_ADMIN">OB Admin</SelectItem>
+                  <SelectItem value="DRIVER">Driver</SelectItem>
                   <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
                 </SelectContent>
               </Select>
@@ -771,7 +775,7 @@ export default function UserPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateUser}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Create Employee
             </Button>
@@ -790,7 +794,7 @@ export default function UserPage() {
 
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Employee Detail
             </SheetTitle>
@@ -834,7 +838,7 @@ export default function UserPage() {
             <div className="flex flex-col">
               <label>Role</label>
               <Input
-                value={selectedUser?.role ?? ""}
+                value={(selectedUser?.role ?? "").replace(/\b\w/g, (c) => c.toUpperCase())}
                 className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 readOnly
               />
@@ -866,7 +870,7 @@ export default function UserPage() {
                 }
                 setOpenEditForm(true);
               }}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Edit Employee
             </Button>
@@ -886,7 +890,7 @@ export default function UserPage() {
 
       <Sheet open={openEditForm} onOpenChange={setOpenEditForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Employee Detail
             </SheetTitle>
@@ -959,6 +963,8 @@ export default function UserPage() {
                   <SelectItem value="USER">User</SelectItem>
                   <SelectItem value="IT_ADMIN">IT Admin</SelectItem>
                   <SelectItem value="HALL_ADMIN">Hall Admin</SelectItem>
+                  <SelectItem value="OB_ADMIN">OB Admin</SelectItem>
+                  <SelectItem value="DRIVER">Driver</SelectItem>
                   <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
                 </SelectContent>
               </Select>
@@ -986,7 +992,7 @@ export default function UserPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateUser}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Employee
             </Button>

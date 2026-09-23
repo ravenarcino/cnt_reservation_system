@@ -10,10 +10,16 @@ import { userSystemRole } from "@prisma/client";
 import { itemStatus } from "@prisma/client";
 
 export async function POST(req: Request) {
-//   const session = await auth();
-//   if (!session || session.user?.systemRole !== "IT_ADMIN") {
-//     return Response.json({ error: "Unauthorized" }, { status: 403 });
-//   }
+  // Without this the route accepts anonymous writes, and writeLog silently
+  // skips a log that has no actor - so the record would be created with no
+  // trace of who did it.
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
+  const actorId = session.user.userId;
+
   try {
     const body = await req.json();
 
@@ -33,7 +39,7 @@ export async function POST(req: Request) {
         event: "Create Equipment Item",
         changes: `Equipment item "${item.item_name}" created`,
         reservation_type: "Info",
-        userId: (await getServerSession(authOptions))?.user?.userId ?? null,
+        userId: actorId,
       });
 
     return NextResponse.json(

@@ -18,13 +18,17 @@ export async function DELETE(
   const { id } = await params;
   const body = await req.json();
 
+  // The actor comes from the session, never from the request body. A client
+  // that sends its own `deletedBy` cannot pin the deletion on someone else.
+  const session = await getServerSession(authOptions);
+  const actorId = session?.user?.userId ?? null;
+
   try {
     // Soft delete the item
     const deletedItem = await prisma.equipment.update({
       where: { item_id: id },
       data: {
-        // deletedBy: session.user?.user_id,
-        deletedBy: body.deletedBy, //for now
+        deletedBy: actorId,
         deletedAt: new Date(),
       },
     });
@@ -32,9 +36,9 @@ export async function DELETE(
     const logs = await writeLog({
         event_type: "DELETED",
         event: "Delete Equipment Item",
-        changes: `Equipment item "${deletedItem.item_name}" deleted by ${body.deletedBy ?? "unknown"}`,
+        changes: `Equipment item "${deletedItem.item_name}" deleted by ${actorId ?? "unknown"}`,
         reservation_type: "Info",
-        userId: (await getServerSession(authOptions))?.user?.userId ?? null,
+        userId: actorId,
       });
 
     return NextResponse.json({ success: true, deletedItem, logs });

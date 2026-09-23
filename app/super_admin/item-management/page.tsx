@@ -1,5 +1,7 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ellipsis, Check, X, RefreshCw } from "lucide-react";
@@ -133,6 +135,7 @@ export default function ItemPage() {
     status: "",
   });
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
+  const [returningItemId, setReturningItemId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<ItemType | null>(null);
   const [selectedTypeFilter, setSelectedTypeFilter] = useState<string | null>(null);
   const [status, setStatus] = useState("all");
@@ -335,6 +338,56 @@ export default function ItemPage() {
     } catch (err) {
       await new Promise((r) => setTimeout(r, 1500));
       toast.dismiss(loadingToast);
+
+      toast.error("Something went wrong");
+      console.log("error", err);
+    }
+  };
+
+  // Marks a borrowed item as returned, putting it back into circulation.
+  // Only the super admin does this - it is the single point where physical
+  // custody of an item is confirmed, so nothing else flips it back to OPEN.
+  const handleReturnItem = async (item: Item) => {
+    if (item.status !== "BORROWED") {
+      toast.error("This item is not borrowed");
+      return;
+    }
+
+    const loadingToast = toast.loading("Marking item as returned...");
+    setReturningItemId(item.item_id);
+
+    try {
+      const res = await fetch(`/api/equipments/items/${item.item_id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        // Only `status` is sent - Prisma leaves fields it never receives
+        // untouched, so the item's name, brand and type are preserved.
+        body: JSON.stringify({ status: "OPEN" }),
+      });
+
+      const data = await res.json();
+
+      await new Promise((r) => setTimeout(r, 1500));
+
+      toast.dismiss(loadingToast);
+      setReturningItemId(null);
+
+      if (!res.ok) {
+        toast.error(data?.message ?? "Failed to mark item as returned");
+        console.log("Error:", data);
+        return;
+      }
+
+      toast.success(`"${item.item_name}" is now available`);
+
+      queryClient.invalidateQueries({
+        queryKey: ["item"],
+        exact: false,
+      });
+    } catch (err) {
+      await new Promise((r) => setTimeout(r, 1500));
+      toast.dismiss(loadingToast);
+      setReturningItemId(null);
 
       toast.error("Something went wrong");
       console.log("error", err);
@@ -581,7 +634,7 @@ export default function ItemPage() {
     <div className="h-full flex flex-col gap-5">
       <div className="flex flex-col lg:flex-row items-center justify-between">
         <div>
-          <p className="text-lg font-semibold">Item Management</p>
+          <h1 className="page-title">Item Management</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Manage IT equipment
           </p>
@@ -589,14 +642,14 @@ export default function ItemPage() {
         <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
           <Button
             onClick={() => setOpenTypeForm(true)}
-            className="w-full lg:w-fit bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
           >
             + Add Item Type
           </Button>
 
           <Button
             onClick={() => setOpenItemForm(true)}
-            className="w-full lg:w-fit bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
           >
             + Add Item
           </Button>
@@ -687,7 +740,7 @@ export default function ItemPage() {
                       className={cn(
                         "group relative w-44 shrink-0 cursor-pointer rounded-xl border p-4 transition-all",
                         isActive
-                          ? "border-green-800 bg-green-50 shadow-sm dark:bg-green-950/20"
+                          ? "border-brand bg-brand-soft shadow-sm"
                           : "hover:border-foreground/20 hover:shadow-sm"
                       )}
                     >
@@ -738,7 +791,7 @@ export default function ItemPage() {
                           className={cn(
                             "font-mono text-[11px] tracking-tight",
                             isActive
-                              ? "text-green-800 dark:text-green-400"
+                              ? "text-brand"
                               : "text-muted-foreground"
                           )}
                         >
@@ -758,7 +811,7 @@ export default function ItemPage() {
                             className={cn(
                               "rounded-md px-2 py-0.5 text-xs font-semibold",
                               isActive
-                                ? "bg-green-800 text-white"
+                                ? "bg-brand text-white"
                                 : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
                             )}
                           >
@@ -803,7 +856,7 @@ export default function ItemPage() {
                       colSpan={8}
                       className="text-center py-10 text-muted-foreground"
                     >
-                      No items found
+                      <EmptyState title="No items found" description="Add an item to get started." />
                     </TableCell>
                   </TableRow>
                 </TableBody>
@@ -881,6 +934,15 @@ export default function ItemPage() {
                                 Edit
                               </DropdownMenuItem>
 
+                              {item.status === "BORROWED" && (
+                                <DropdownMenuItem
+                                  disabled={returningItemId === item.item_id}
+                                  onClick={() => handleReturnItem(item)}
+                                >
+                                  Returned
+                                </DropdownMenuItem>
+                              )}
+
                               <DropdownMenuItem
                                 onClick={() => {
                                   setSelectedItem(item);
@@ -935,7 +997,7 @@ export default function ItemPage() {
 
       <Sheet open={openItemForm} onOpenChange={setOpenItemForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Add New Item
             </SheetTitle>
@@ -1051,7 +1113,7 @@ export default function ItemPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateItem}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Create Item
             </Button>
@@ -1070,7 +1132,7 @@ export default function ItemPage() {
 
       <Sheet open={openTypeForm} onOpenChange={setOpenTypeForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Add New Item Type
             </SheetTitle>
@@ -1095,7 +1157,7 @@ export default function ItemPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateItemType}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Create Item Type
             </Button>
@@ -1114,7 +1176,7 @@ export default function ItemPage() {
 
       <Sheet open={openItem} onOpenChange={setOpenItem}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Item Detail
             </SheetTitle>
@@ -1193,7 +1255,7 @@ export default function ItemPage() {
                 }
                 setOpenItemEditForm(true);
               }}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Edit Item
             </Button>
@@ -1213,7 +1275,7 @@ export default function ItemPage() {
 
       <Sheet open={openType} onOpenChange={setOpenType}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Item Type Detail
             </SheetTitle>
@@ -1248,7 +1310,7 @@ export default function ItemPage() {
                 }
                 setOpenTypeEditForm(true);
               }}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Edit Type
             </Button>
@@ -1268,7 +1330,7 @@ export default function ItemPage() {
 
       <Sheet open={openItemEditForm} onOpenChange={setOpenItemEditForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Item Detail
             </SheetTitle>
@@ -1372,7 +1434,7 @@ export default function ItemPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateItem}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Item
             </Button>
@@ -1391,7 +1453,7 @@ export default function ItemPage() {
 
       <Sheet open={openTypeEditForm} onOpenChange={setOpenTypeEditForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Item Type
             </SheetTitle>
@@ -1420,7 +1482,7 @@ export default function ItemPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateItemType}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Item Type
             </Button>

@@ -1,6 +1,9 @@
 "use client";
 
+import { EmptyState } from "@/components/ui/empty-state";
+
 import { useState, useEffect, useMemo } from "react";
+import { useSession } from "next-auth/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ellipsis, Check, X, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -108,6 +111,11 @@ export default function HallPage() {
   const [deleting, setDeleting] = useState(false);
   const [page, setPage] = useState(1);
   const limit = 10;
+  const { data: session } = useSession();
+  // The signed-in admin, recorded as the actor on soft deletes.
+  const currentUserId = (session?.user as { userId?: string } | undefined)
+    ?.userId;
+
   const queryClient = useQueryClient();
 
   const [typeForm, setTypeForm] = useState({
@@ -399,7 +407,7 @@ export default function HallPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          deletedBy: "SUPER_ADMIN",
+          deletedBy: currentUserId,
         }),
       });
 
@@ -449,7 +457,7 @@ export default function HallPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          deletedBy: "SUPER_ADMIN",
+          deletedBy: currentUserId,
         }),
       });
 
@@ -486,6 +494,103 @@ export default function HallPage() {
   };
 
   const halls: Hall[] = hallData?.data ?? [];
+
+  // ---- Availability for today -------------------------------------------
+  // Hall.status is a manual flag with no date attached, so it cannot express
+  // "full on Oct 5". Today's real availability is derived from the day's
+  // reservations instead, and shown as its own column - nothing is written
+  // back to the database.
+  const HM_BUSINESS_START = 8 * 60 + 30; // 08:30
+  const HM_BUSINESS_END = 18 * 60 + 30; // 18:30
+
+  const { data: todayReservationData } = useQuery({
+    queryKey: ["hallReservation", "availability"],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/reservations/hall_reservations/reservation`,
+      );
+      const json = await res.json();
+
+      if (!res.ok) throw new Error(json?.error);
+
+      return json;
+    },
+  });
+
+  // hall_id -> minutes still free inside the business day, for today only.
+  const freeMinutesToday = useMemo(() => {
+    const toMinutes = (d: Date) => d.getHours() * 60 + d.getMinutes();
+    const dayKey = (d: Date) =>
+      `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+
+    const today = dayKey(new Date());
+    const allReservations = todayReservationData?.data ?? [];
+    const rangesByHall: Record<string, { start: number; end: number }[]> = {};
+
+    allReservations.forEach((res: any) => {
+      if (res.status === "CANCELLED" || res.status === "DECLINED") return;
+      if (dayKey(new Date(res.date_appointment)) !== today) return;
+
+      const start = toMinutes(new Date(res.time_from));
+      const end = toMinutes(new Date(res.time_to));
+
+      (res.hall ?? []).forEach((h: { hall_id: string }) => {
+        if (!rangesByHall[h.hall_id]) rangesByHall[h.hall_id] = [];
+        rangesByHall[h.hall_id].push({ start, end });
+      });
+    });
+
+    const result: Record<string, number> = {};
+    const fullDay = HM_BUSINESS_END - HM_BUSINESS_START;
+
+    Object.entries(rangesByHall).forEach(([hallId, ranges]) => {
+      const sorted = [...ranges].sort((a, b) => a.start - b.start);
+      const merged: { start: number; end: number }[] = [];
+
+      for (const range of sorted) {
+        const last = merged[merged.length - 1];
+        if (last && range.start <= last.end) {
+          last.end = Math.max(last.end, range.end);
+        } else {
+          merged.push({ ...range });
+        }
+      }
+
+      // Count only the part of each booking that falls inside 08:30-18:30.
+      const bookedMinutes = merged.reduce((total, r) => {
+        const start = Math.max(r.start, HM_BUSINESS_START);
+        const end = Math.min(r.end, HM_BUSINESS_END);
+        return total + Math.max(0, end - start);
+      }, 0);
+
+      result[hallId] = Math.max(0, fullDay - bookedMinutes);
+    });
+
+    return result;
+  }, [todayReservationData]);
+
+  function availabilityToday(hall: Hall) {
+    // A hall the admin marked FULL is out regardless of the schedule.
+    if (hall.status === "FULL") {
+      return { label: "Marked full", tone: "text-red-600" };
+    }
+
+    const fullDay = HM_BUSINESS_END - HM_BUSINESS_START;
+    const free = freeMinutesToday[hall.hall_id] ?? fullDay;
+
+    if (free <= 0) return { label: "Fully booked", tone: "text-red-600" };
+
+    const hours = Math.floor(free / 60);
+    const minutes = free % 60;
+    const left = minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+
+    if (free < fullDay) {
+      return { label: `${left} free`, tone: "text-amber-600" };
+    }
+
+    return { label: "Available", tone: "text-green-600" };
+  }
+
   const totalHalls = hallData?.total ?? 0;
   const totalPages = Math.ceil(totalHalls / limit) || 1;
   const hallTypes: HallType[] = hallTypeData?.data ?? [];
@@ -564,7 +669,7 @@ export default function HallPage() {
     <div className="h-full flex flex-col gap-5">
       <div className="flex flex-col lg:flex-row items-center justify-between">
         <div>
-          <p className="text-lg font-semibold">Hall Management</p>
+          <h1 className="page-title">Hall Management</h1>
           <p className="text-sm text-muted-foreground text-wrap">
             Manage halls
           </p>
@@ -572,14 +677,14 @@ export default function HallPage() {
         <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
           <Button
             onClick={() => setOpenTypeForm(true)}
-            className="w-full lg:w-fit bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
           >
             + Add Hall Type
           </Button>
 
           <Button
             onClick={() => setOpenHallForm(true)}
-            className="w-full lg:w-fit bg-green-800 text-white px-4 py-4 rounded-sm font-medium "
+            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
           >
             + Add Hall
           </Button>
@@ -653,7 +758,7 @@ export default function HallPage() {
                       className={cn(
                         "group relative w-44 shrink-0 cursor-pointer rounded-xl border p-4 transition-all",
                         isActive
-                          ? "border-green-800 bg-green-50 shadow-sm dark:bg-green-950/20"
+                          ? "border-brand bg-brand-soft shadow-sm"
                           : "hover:border-foreground/20 hover:shadow-sm"
                       )}
                     >
@@ -704,7 +809,7 @@ export default function HallPage() {
                           className={cn(
                             "font-mono text-[11px] tracking-tight",
                             isActive
-                              ? "text-green-800 dark:text-green-400"
+                              ? "text-brand"
                               : "text-muted-foreground"
                           )}
                         >
@@ -753,7 +858,7 @@ export default function HallPage() {
                       colSpan={8}
                       className="text-center py-10 text-muted-foreground"
                     >
-                      No halls found
+                      <EmptyState title="No halls found" description="Add a hall to get started." />
                     </TableCell>
                   </TableRow>
                 </TableBody>
@@ -766,7 +871,7 @@ export default function HallPage() {
                     <TableHead>Hall ID</TableHead>
                     <TableHead>Hall Name</TableHead>
                     <TableHead>Floor</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Today&apos;s Status</TableHead>
                     <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -788,7 +893,11 @@ export default function HallPage() {
 
                       <TableCell>{hall.floor}</TableCell>
 
-                      <TableCell>{hall.status === "OPEN" ? "Open" : "Full"}</TableCell>
+                      <TableCell>
+                        <span className={availabilityToday(hall).tone}>
+                          {availabilityToday(hall).label}
+                        </span>
+                      </TableCell>
 
                       <TableCell>
                         <DropdownMenu>
@@ -877,7 +986,7 @@ export default function HallPage() {
 
       <Sheet open={openHallForm} onOpenChange={setOpenHallForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Add New Hall
             </SheetTitle>
@@ -941,7 +1050,7 @@ export default function HallPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateHall}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Create Hall
             </Button>
@@ -960,7 +1069,7 @@ export default function HallPage() {
 
       <Sheet open={openTypeForm} onOpenChange={setOpenTypeForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Add New Hall Type
             </SheetTitle>
@@ -985,7 +1094,7 @@ export default function HallPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateHallType}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Create Hall Type
             </Button>
@@ -1004,7 +1113,7 @@ export default function HallPage() {
 
       <Sheet open={openHall} onOpenChange={setOpenHall}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Hall Detail
             </SheetTitle>
@@ -1061,7 +1170,7 @@ export default function HallPage() {
                 }
                 setOpenHallEditForm(true);
               }}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Edit Hall
             </Button>
@@ -1081,7 +1190,7 @@ export default function HallPage() {
 
       <Sheet open={openType} onOpenChange={setOpenType}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Hall Type Detail
             </SheetTitle>
@@ -1116,7 +1225,7 @@ export default function HallPage() {
                 }
                 setOpenTypeEditForm(true);
               }}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Edit Type
             </Button>
@@ -1136,7 +1245,7 @@ export default function HallPage() {
 
       <Sheet open={openHallEditForm} onOpenChange={setOpenHallEditForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Hall Detail
             </SheetTitle>
@@ -1200,7 +1309,7 @@ export default function HallPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateHall}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Hall
             </Button>
@@ -1219,7 +1328,7 @@ export default function HallPage() {
 
       <Sheet open={openTypeEditForm} onOpenChange={setOpenTypeEditForm}>
         <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-green-800">
+          <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Hall Type
             </SheetTitle>
@@ -1248,7 +1357,7 @@ export default function HallPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateHallType}
-              className="w-full bg-green-800 rounded-sm py-5 text-white font-medium"
+              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
             >
               Update Hall Type
             </Button>

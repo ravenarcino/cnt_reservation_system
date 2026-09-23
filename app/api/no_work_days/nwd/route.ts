@@ -4,7 +4,8 @@ import { Prisma } from "@prisma/client";
 import { nanoid } from "nanoid";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { noworkdayType } from "@prisma/client";
+import { writeLog } from "@/lib/logger";
+import { noworkdayType, Type } from "@prisma/client";
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -30,25 +31,28 @@ export async function POST(req: Request) {
       );
     }
 
+    // Which calendar this entry belongs to. HALL and OB keep separate
+    // non-working days, so an OB holiday must not block hall reservations.
+    const nwdType = body.nwd_type === "OB" ? "OB" : "HALL";
+
     const noWorkDay = await prisma.no_Work_Days.create({
       data: {
         nwd_id: `NWD-${nanoid(10)}`,
         date: new Date(body.date),
         description: body.description,
         type: body.type as noworkdayType,
+        nwd_type: nwdType as Type,
         userId: user.userId,
       },
     });
 
-    const logs = await prisma.logs.create({
-      data: {
-        log_id: `LOG-${nanoid(10)}`,
-        event_type: "CREATED",
-        event: "Create Non-Working Day",
-        changes: `Non-working day "${noWorkDay.description}" (${noWorkDay.type}) added`,
-        reservation_type: "Calendar",
-        userId: user.userId,
-      },
+    // Best-effort: a failed log must not undo a successful create.
+    const logs = await writeLog({
+      event_type: "CREATED",
+      event: "Create Non-Working Day",
+      changes: `Non-working day "${noWorkDay.description}" (${noWorkDay.type}) added`,
+      reservation_type: "Calendar",
+      userId: user.userId,
     });
 
     return NextResponse.json(
@@ -60,6 +64,25 @@ export async function POST(req: Request) {
       { status: 200 },
     );
   } catch (error) {
+    // A non-working day is owned by the account that created it. The
+    // environment admin from .env has no Users row, so its user_id fails the
+    // foreign key - which reads as a generic failure without this.
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2003"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Your account has no user record, so it cannot own a non-working day. Sign in with an account that exists in User Management.",
+        },
+        { status: 409 },
+      );
+    }
+
+    console.error("Create non-working day failed:", error);
+
     return NextResponse.json(
       {
         success: false,
@@ -84,9 +107,15 @@ export async function GET(req: Request) {
   const type = searchParams.get("type");
   const isValidType = type === "CUSTOM" || type === "HOLIDAY";
 
+  // Callers ask for one calendar at a time. Without this filter the hall page
+  // would list OB holidays and vice versa.
+  const nwdType = searchParams.get("nwd_type");
+  const isValidNwdType = nwdType === "HALL" || nwdType === "OB";
+
   let where: Prisma.No_Work_DaysWhereInput = {
     deletedAt: null,
     ...(isValidType && { type: type as noworkdayType }),
+    ...(isValidNwdType && { nwd_type: nwdType as Type }),
   };
 
   if (search) {
