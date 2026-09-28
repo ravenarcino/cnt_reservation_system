@@ -1,5 +1,9 @@
 "use client";
 
+import { AccountStatus, FilterStrip, ROLE_META, RoleChip, Segmented } from "@/components/management/parts";
+import { FormSection, FieldLabel, SelectCard } from "@/components/booking/form-parts";
+import { PasswordField, PasswordStrength } from "@/components/account/password-field";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useState, useEffect } from "react";
@@ -107,9 +111,9 @@ export default function UserPage() {
     email: "",
     department: "",
     role: "",
-    systemRole: "",
+    systemRole: "USER",
     password: "",
-    status: "",
+    status: "REGISTERED",
   });
   const [editForm, setEditForm] = useState({
     name: "",
@@ -200,8 +204,8 @@ export default function UserPage() {
         role: "",
         email: "",
         password: "",
-        systemRole: "",
-        status: "",
+        systemRole: "USER",
+        status: "REGISTERED",
       });
 
       queryClient.invalidateQueries({
@@ -367,6 +371,21 @@ export default function UserPage() {
   };
 
   const employees: Employee[] = data?.data ?? [];
+
+  // Every account (unfiltered) for the summary strip.
+  const { data: allUsersData } = useQuery({
+    queryKey: ["employee", "summary"],
+    queryFn: async () => {
+      const res = await fetch(`/api/users/user?limit=1000`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json as { data: Employee[]; total: number };
+    },
+  });
+  const allUsers = allUsersData?.data ?? [];
+  const stripActive = status === "UNREGISTERED" ? "PENDING" : systemRole;
+  const initialsOf = (name: string) =>
+    name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / limit) || 1;
 
@@ -420,163 +439,211 @@ export default function UserPage() {
 
   return (
     <div className="h-full flex flex-col gap-5">
-      <div className="flex flex-col lg:flex-row items-center justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="page-title">Employee Management</h1>
+          <h1 className="page-title flex items-center gap-2">
+            Employees
+            <span className="rounded-md bg-neutral-100 px-2 py-0.5 font-sans text-sm font-medium tabular-nums text-muted-foreground">
+              {allUsersData?.total ?? total}
+            </span>
+          </h1>
           <p className="text-sm text-muted-foreground text-wrap">
-            Manage employee accounts
+            Manage employee accounts, roles and access
           </p>
         </div>
-        <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
-          <Button
-            onClick={() => setOpenForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Employee
-          </Button>
-        </div>
+        <Button onClick={() => setOpenForm(true)} className="w-full lg:w-fit">
+          + Add employee
+        </Button>
       </div>
-      <div className="flex flex-col gap-3">
+
+      <FilterStrip
+        title="Accounts by role"
+        total={allUsers.length}
+        active={stripActive}
+        onSelect={(key) => {
+          setPage(1);
+          if (key === "PENDING") {
+            setSystemRole("all");
+            setStatus("UNREGISTERED");
+          } else {
+            setStatus("all");
+            setSystemRole(key);
+          }
+        }}
+        items={[
+          ...["USER", "HALL_ADMIN", "OB_ADMIN", "DRIVER"].map((r) => ({
+            key: r,
+            label: ROLE_META[r].label + "s",
+            color: ROLE_META[r].color,
+            count: allUsers.filter((u) => u.systemRole === r).length,
+          })),
+          {
+            key: "SUPER_ADMIN",
+            label: "Admins",
+            color: ROLE_META.SUPER_ADMIN.color,
+            count: allUsers.filter((u) => u.systemRole === "SUPER_ADMIN" || u.systemRole === "IT_ADMIN").length,
+          },
+          {
+            key: "PENDING",
+            label: "Pending activation",
+            color: "#f59e0b",
+            count: allUsers.filter((u) => u.status === "UNREGISTERED").length,
+          },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
           <Input
-            placeholder="Search employee"
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
+            placeholder="Search by name or ID"
+            className="pl-9"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
           />
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-3">
-          {/* System Role Select */}
-          <Select value={systemRole} onValueChange={setSystemRole}>
-            <SelectTrigger className="w-full lg:max-w-48 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-              <SelectValue placeholder={"System Role"} />
-            </SelectTrigger>
+        <Select value={systemRole} onValueChange={(v) => { setSystemRole(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:max-w-44">
+            <SelectValue placeholder="System role" />
+          </SelectTrigger>
+          <SelectContent position="popper" sideOffset={4} className="w-fit">
+            <SelectGroup>
+              <SelectLabel>System role</SelectLabel>
+              <SelectItem value="all">All roles</SelectItem>
+              {rolesData?.data?.map((r: string) => (
+                <SelectItem key={r} value={r}>
+                  {ROLE_META[r]?.label ?? r}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
 
-            <SelectContent position="popper" sideOffset={4} className="w-fit ">
-              <SelectGroup>
-                <SelectLabel>System Role</SelectLabel>
-                <SelectItem value="all">All</SelectItem>
-                {rolesData?.data?.map((r: string) => (
-                  <SelectItem key={r} value={r}>
-                    {r
-                      .replace(/_/g, " ")
-                      .replace(/\b\w/g, (c) => c.toUpperCase())}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+        <Select value={department} onValueChange={(v) => { setDepartment(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:max-w-44">
+            <SelectValue placeholder="Department" />
+          </SelectTrigger>
+          <SelectContent position="popper" sideOffset={4} className="w-fit">
+            <SelectGroup>
+              <SelectLabel>Department</SelectLabel>
+              <SelectItem value="all">All departments</SelectItem>
+              {departmentsData?.data?.map((d: string) => (
+                <SelectItem key={d} value={d}>
+                  {d.replace(/\b\w/g, (c) => c.toUpperCase())}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
 
-          {/* Department */}
-          <Select value={department} onValueChange={setDepartment}>
-            <SelectTrigger className="w-full lg:max-w-48 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-              <SelectValue placeholder="Department" />
-            </SelectTrigger>
-
-            <SelectContent position="popper" sideOffset={4} className="w-fit">
-              <SelectGroup>
-                <SelectLabel>Department</SelectLabel>
-                <SelectItem value="all">All</SelectItem>
-                {departmentsData?.data?.map((d: string) => (
-                  <SelectItem key={d} value={d}>
-                    {d.replace(/\b\w/g, (c) => c.toUpperCase())}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-
-          {/* Status Select */}
-          <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="w-full lg:max-w-48 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-              <SelectValue placeholder={"Status"} />
-            </SelectTrigger>
-
-            <SelectContent position="popper" sideOffset={4} className="w-fit ">
-              <SelectGroup>
-                <SelectLabel>Status</SelectLabel>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="REGISTERED">Registered</SelectItem>
-                <SelectItem value="UNREGISTERED">Unregistered</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
+        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:max-w-44">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent position="popper" sideOffset={4} className="w-fit">
+            <SelectGroup>
+              <SelectLabel>Status</SelectLabel>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="REGISTERED">Active</SelectItem>
+              <SelectItem value="UNREGISTERED">Pending activation</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
+
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {isLoading ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10">
+                  <TableCell colSpan={6} className="py-10 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
-                      <span>Loading employee</span>
+                      <span>Loading employees</span>
                     </div>
                   </TableCell>
                 </TableRow>
               </TableBody>
             ) : employees.length === 0 ? (
-              <>
-                <TableBody>
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center py-10 text-muted-foreground"
-                    >
-                      <EmptyState title="No staff found" description="Try a different search or filter." />
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                    <EmptyState
+                      title="No employees found"
+                      description="Try a different search or filter."
+                      action={
+                        <Button size="sm" onClick={() => setOpenForm(true)}>
+                          + Add employee
+                        </Button>
+                      }
+                    />
+                  </TableCell>
+                </TableRow>
+              </TableBody>
             ) : (
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Employee ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Email</TableHead>
+                    <TableHead>Employee</TableHead>
                     <TableHead>Department</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>System Role</TableHead>
+                    <TableHead>System role</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Employee ID</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {employees.map((employee, index) => (
-                    <TableRow key={employee.user_id}>
-                      <TableCell className="font-medium">
-                        {index + 1 + (page - 1) * limit}
+                  {employees.map((employee) => (
+                    <TableRow
+                      key={employee.user_id}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        // The action menu renders in a portal; ignore its clicks.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setSelectedUser(employee);
+                        setOpen(true);
+                      }}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                            style={{ backgroundColor: ROLE_META[employee.systemRole]?.color ?? "#a3a3a3" }}
+                          >
+                            {initialsOf(employee.name)}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate font-medium">{employee.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{employee.email}</p>
+                          </div>
+                        </div>
                       </TableCell>
 
-                      <TableCell className="font-medium">
+                      <TableCell>
+                        <p>{employee.department}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {employee.role.replace(/\b\w/g, (c) => c.toUpperCase())}
+                        </p>
+                      </TableCell>
+
+                      <TableCell>
+                        <RoleChip role={employee.systemRole} />
+                      </TableCell>
+
+                      <TableCell>
+                        <AccountStatus status={employee.status} />
+                      </TableCell>
+
+                      <TableCell className="font-mono text-xs text-muted-foreground">
                         {employee.user_id}
                       </TableCell>
-
-                      <TableCell>{employee.name}</TableCell>
-
-                      <TableCell>{employee.email}</TableCell>
-
-                      <TableCell>{employee.department}</TableCell>
-
-                      <TableCell>
-                        {employee.role.replace(/\b\w/g, (c) => c.toUpperCase())}
-                      </TableCell>
-
-                      <TableCell>
-                        {employee.systemRole
-                          .replace(/_/g, " ")
-                          .replace(/\b\w/g, (c) => c.toUpperCase())}
-                      </TableCell>
-
-                      <TableCell>{employee.status}</TableCell>
 
                       <TableCell>
                         <DropdownMenu>
@@ -667,194 +734,131 @@ export default function UserPage() {
       </div>
 
       <Sheet open={openForm} onOpenChange={setOpenForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
-            <SheetTitle className="text-white font-bold">
-              Add New Employee
-            </SheetTitle>
-            <SheetDescription className="text-white">
-              Fill in employee details below.
-            </SheetDescription>
+            <SheetTitle className="text-white font-bold">Add employee</SheetTitle>
+            <SheetDescription className="text-white">Create an account and choose what they can access.</SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <div className="flex flex-col">
-              <label>Name</label>
-              <Input
-                type="name"
-                placeholder="Employee Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-              />
-            </div>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Personal information">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="form-name">Full name</FieldLabel>
+                <Input id="form-name" placeholder="Juan Dela Cruz" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="form-email">Email</FieldLabel>
+                <Input id="form-email" type="email" placeholder="name@gmail.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor="form-dept">Department</FieldLabel>
+                  <Input id="form-dept" placeholder="Marketing" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor="form-role">Position</FieldLabel>
+                  <Input id="form-role" placeholder="Account Executive" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} />
+                </div>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Department</label>
-              <Input
-                placeholder="Department"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={form.department}
-                onChange={(e) =>
-                  setForm({ ...form, department: e.target.value })
-                }
-              />
-            </div>
+            <FormSection step={2} title="Access">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>System role</FieldLabel>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {["USER", "HALL_ADMIN", "OB_ADMIN", "DRIVER", "IT_ADMIN", "SUPER_ADMIN"].map((r) => (
+                    <SelectCard
+                      key={r}
+                      selected={form.systemRole === r}
+                      onToggle={() => setForm({ ...form, systemRole: r })}
+                      title={ROLE_META[r].label}
+                      subtitle={ROLE_META[r].hint}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Account status</FieldLabel>
+                <Segmented
+                  value={(form.status || "REGISTERED") as string}
+                  onChange={(v) => setForm({ ...form, status: v })}
+                  options={[
+                    { value: "REGISTERED", label: "Active" },
+                    { value: "UNREGISTERED", label: "Pending activation" },
+                  ]}
+                />
+                <p className="text-xs text-muted-foreground">Pending accounts cannot sign in.</p>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Role</label>
-              <Input
-                placeholder="Role"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={form.role}
-                onChange={(e) => setForm({ ...form, role: e.target.value })}
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Email</label>
-              <Input
-                placeholder="Email"
-                type="email"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Password</label>
-              <Input
-                placeholder="Password"
-                type="password"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+            <FormSection step={3} title="Password" hint="At least 8 characters">
+              <PasswordField
+                id="new-user-password"
                 value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="Set a starting password"
+                onChange={(v) => setForm({ ...form, password: v })}
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>System Role</label>
-              <Select
-                value={form.systemRole}
-                onValueChange={(value) =>
-                  setForm({ ...form, systemRole: value })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select system role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USER">User</SelectItem>
-                  <SelectItem value="IT_ADMIN">IT Admin</SelectItem>
-                  <SelectItem value="HALL_ADMIN">Hall Admin</SelectItem>
-                  <SelectItem value="OB_ADMIN">OB Admin</SelectItem>
-                  <SelectItem value="DRIVER">Driver</SelectItem>
-                  <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col">
-              <label>Status</label>
-              <Select
-                value={form.status}
-                onValueChange={(value) => setForm({ ...form, status: value })}
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="REGISTERED">Registered</SelectItem>
-                  <SelectItem value="UNREGISTERED">Unregistered</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <PasswordStrength value={form.password} />
+            </FormSection>
           </div>
 
           <SheetFooter>
-            <Button
-              onClick={handleCreateUser}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
-            >
-              Create Employee
-            </Button>
-
+            <Button onClick={handleCreateUser} className="w-full h-10">Create employee</Button>
             <SheetClose asChild>
-              <Button
-                variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
-              >
-                Cancel
-              </Button>
+              <Button variant="outline" className="w-full h-10">Cancel</Button>
             </SheetClose>
           </SheetFooter>
         </SheetContent>
       </Sheet>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="right" className=" overflow-y-scroll">
-          <SheetHeader className="bg-brand">
-            <SheetTitle className="text-white font-bold">
-              Employee Detail
-            </SheetTitle>
-            <SheetDescription className="text-white">
-              Review employee details below.
-            </SheetDescription>
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-md">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Employee</SheetTitle>
+            <SheetDescription>Employee details</SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
-              Employee ID: {selectedUser?.user_id}
-            </label>
-
+          {selectedUser && (
             <div className="flex flex-col">
-              <label>Name</label>
-              <Input
-                value={selectedUser?.name ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
+              <div className="flex flex-col items-center gap-2 border-b border-border px-6 pb-6 pt-10 text-center">
+                <span
+                  className="flex h-16 w-16 items-center justify-center rounded-full text-xl font-semibold text-white"
+                  style={{ backgroundColor: ROLE_META[selectedUser.systemRole]?.color ?? "#a3a3a3" }}
+                >
+                  {initialsOf(selectedUser.name)}
+                </span>
+                <p className="text-lg font-semibold">{selectedUser.name}</p>
+                <p className="text-sm text-muted-foreground">{selectedUser.email}</p>
+                <div className="mt-1 flex flex-wrap justify-center gap-1.5">
+                  <RoleChip role={selectedUser.systemRole} />
+                  <AccountStatus status={selectedUser.status} />
+                </div>
+              </div>
 
-            <div className="flex flex-col">
-              <label>Email</label>
-              <Input
-                value={selectedUser?.email ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+              <dl className="grid grid-cols-2 gap-x-6 gap-y-4 p-6 text-sm">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Department</dt>
+                  <dd className="mt-0.5 font-medium">{selectedUser.department || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Position</dt>
+                  <dd className="mt-0.5 font-medium">
+                    {(selectedUser.role || "—").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </dd>
+                </div>
+                <div className="col-span-2">
+                  <dt className="text-xs text-muted-foreground">Employee ID</dt>
+                  <dd className="mt-0.5 font-mono text-sm">{selectedUser.user_id}</dd>
+                </div>
+                <div className="col-span-2 rounded-md border border-border bg-neutral-50 p-3">
+                  <dt className="text-xs text-muted-foreground">What this role can do</dt>
+                  <dd className="mt-0.5 text-sm">{ROLE_META[selectedUser.systemRole]?.hint ?? "—"}</dd>
+                </div>
+              </dl>
             </div>
+          )}
 
-            <div className="flex flex-col">
-              <label>Department</label>
-              <Input
-                value={selectedUser?.department ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Role</label>
-              <Input
-                value={(selectedUser?.role ?? "").replace(/\b\w/g, (c) => c.toUpperCase())}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Status</label>
-              <Input
-                value={selectedUser?.status ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-          </div>
-
-          <SheetFooter>
+          <SheetFooter className="border-t border-border">
             <Button
               onClick={() => {
                 setOpen(false);
@@ -870,18 +874,17 @@ export default function UserPage() {
                 }
                 setOpenEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Edit Employee
+              Edit employee
             </Button>
-
             <SheetClose asChild>
               <Button
-                variant="destructive"
+                variant="outline"
                 onClick={() => setOpenDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
               >
-                Delete Employee
+                Delete employee
               </Button>
             </SheetClose>
           </SheetFooter>
@@ -889,121 +892,68 @@ export default function UserPage() {
       </Sheet>
 
       <Sheet open={openEditForm} onOpenChange={setOpenEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
-            <SheetTitle className="text-white font-bold">
-              Edit Employee Detail
-            </SheetTitle>
-            <SheetDescription className="text-white">
-              Update employee details below.
-            </SheetDescription>
+            <SheetTitle className="text-white font-bold">Edit employee</SheetTitle>
+            <SheetDescription className="text-white">Update details, role or access.</SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
-              Employee ID: {selectedUser?.user_id}
-            </label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Personal information">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="editForm-name">Full name</FieldLabel>
+                <Input id="editForm-name" placeholder="Juan Dela Cruz" value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="editForm-email">Email</FieldLabel>
+                <Input id="editForm-email" type="email" placeholder="name@gmail.com" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor="editForm-dept">Department</FieldLabel>
+                  <Input id="editForm-dept" placeholder="Marketing" value={editForm.department} onChange={(e) => setEditForm({ ...editForm, department: e.target.value })} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor="editForm-role">Position</FieldLabel>
+                  <Input id="editForm-role" placeholder="Account Executive" value={editForm.role} onChange={(e) => setEditForm({ ...editForm, role: e.target.value })} />
+                </div>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Name</label>
-              <Input
-                value={editForm.name}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, name: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Email</label>
-              <Input
-                value={editForm.email}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, email: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Department</label>
-              <Input
-                value={editForm.department}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, department: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Role</label>
-              <Input
-                value={editForm.role}
-                onChange={(e) =>
-                  setEditForm({ ...editForm, role: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>System Role</label>
-              <Select
-                value={editForm.systemRole}
-                onValueChange={(value) =>
-                  setEditForm({ ...editForm, systemRole: value })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select system role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="USER">User</SelectItem>
-                  <SelectItem value="IT_ADMIN">IT Admin</SelectItem>
-                  <SelectItem value="HALL_ADMIN">Hall Admin</SelectItem>
-                  <SelectItem value="OB_ADMIN">OB Admin</SelectItem>
-                  <SelectItem value="DRIVER">Driver</SelectItem>
-                  <SelectItem value="SUPER_ADMIN">Super Admin</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col">
-              <label>Status</label>
-              <Select
-                value={editForm.status}
-                onValueChange={(value) =>
-                  setEditForm({ ...editForm, status: value })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="REGISTERED">Registered</SelectItem>
-                  <SelectItem value="UNREGISTERED">Unregistered</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection step={2} title="Access">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>System role</FieldLabel>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {["USER", "HALL_ADMIN", "OB_ADMIN", "DRIVER", "IT_ADMIN", "SUPER_ADMIN"].map((r) => (
+                    <SelectCard
+                      key={r}
+                      selected={editForm.systemRole === r}
+                      onToggle={() => setEditForm({ ...editForm, systemRole: r })}
+                      title={ROLE_META[r].label}
+                      subtitle={ROLE_META[r].hint}
+                    />
+                  ))}
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Account status</FieldLabel>
+                <Segmented
+                  value={(editForm.status || "REGISTERED") as string}
+                  onChange={(v) => setEditForm({ ...editForm, status: v })}
+                  options={[
+                    { value: "REGISTERED", label: "Active" },
+                    { value: "UNREGISTERED", label: "Pending activation" },
+                  ]}
+                />
+                <p className="text-xs text-muted-foreground">Pending accounts cannot sign in.</p>
+              </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
-            <Button
-              onClick={handleUpdateUser}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
-            >
-              Update Employee
-            </Button>
-
+            <Button onClick={handleUpdateUser} className="w-full h-10">Save changes</Button>
             <SheetClose asChild>
-              <Button
-                variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
-              >
-                Cancel
-              </Button>
+              <Button variant="outline" className="w-full h-10">Cancel</Button>
             </SheetClose>
           </SheetFooter>
         </SheetContent>
@@ -1012,12 +962,10 @@ export default function UserPage() {
       <AlertDialog open={openDialog} onOpenChange={setOpenDialog}>
         <AlertDialogContent className="">
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-bold">
-              Delete this item?
-            </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
-              This action cannot be undone. This will permanently delete this
-              record and remove it from your system.
+            <AlertDialogTitle>Delete {selectedUser?.name ?? "this employee"}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              They will no longer be able to sign in. Their past reservations and
+              logs are kept.
             </AlertDialogDescription>
           </AlertDialogHeader>
 

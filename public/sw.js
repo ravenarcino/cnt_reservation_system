@@ -11,7 +11,7 @@
  * data is wiped on logout.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const STATIC_CACHE = `cnt-static-${VERSION}`;
 const PAGE_CACHE = `cnt-pages-${VERSION}`;
 const API_CACHE = `cnt-api-${VERSION}`;
@@ -106,10 +106,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Cache-first only for files whose name changes when their content does
+  // (Next's hashed build output) and for icons/images. Everything else -
+  // including any unhashed JS/CSS - goes to the network, so a new build is
+  // never hidden behind an old cached copy.
   if (
-    url.pathname.startsWith("/_next/static") ||
+    url.pathname.startsWith("/_next/static/") ||
     url.pathname.startsWith("/icons/") ||
-    /\.(png|jpg|jpeg|svg|ico|woff2?|css|js)$/.test(url.pathname)
+    /\.(png|jpg|jpeg|svg|ico|woff2?)$/.test(url.pathname)
   ) {
     event.respondWith(cacheFirst(request));
   }

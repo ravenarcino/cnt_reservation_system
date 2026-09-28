@@ -1,5 +1,9 @@
 "use client";
 
+import { FormSection, SelectCard } from "@/components/booking/form-parts";
+import { ProofDropzone } from "@/components/booking/proof-dropzone";
+import { DetailGrid, DetailHeader, DetailItem, StatusSteps } from "@/components/booking/detail-parts";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -463,26 +467,22 @@ export function ObReservations({
     <div className="flex flex-col gap-3">
       {showHeading && <p className="text-base font-semibold">OB Trips</p>}
 
-      <div className="flex-1 overflow-auto rounded-md border">
+      <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>No.</TableHead>
-              <TableHead>OB ID</TableHead>
-              <TableHead>Purpose</TableHead>
+              <TableHead>Trip</TableHead>
               <TableHead>Destination</TableHead>
-              <TableHead>Vehicle</TableHead>
-              <TableHead>Departure</TableHead>
-              <TableHead>Return</TableHead>
-              <TableHead>Passengers</TableHead>
+              <TableHead>Schedule</TableHead>
+              <TableHead className="text-right">Passengers</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Action</TableHead>
+              <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10">
+                <TableCell colSpan={6} className="text-center py-10">
                   <div className="flex items-center justify-center gap-2 text-muted-foreground">
                     <Spinner />
                     <span>Loading OB trips</span>
@@ -491,27 +491,44 @@ export function ObReservations({
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                   <EmptyState title="No OB trip found" description="Book an OB trip to see it here." />
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((trip, index) => {
+              rows.map((trip) => {
                 const actions = getActions(trip);
                 return (
-                  <TableRow key={trip.ob_id}>
-                    <TableCell className="font-medium">
-                      {index + 1 + (currentPage - 1) * limit}
+                  <TableRow
+                    key={trip.ob_id}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      // Ignore clicks from the action menu: it renders in a portal (outside
+                          // the row in the DOM) but React still bubbles its clicks here -
+                          // including clicks on disabled items.
+                          if (!e.currentTarget.contains(e.target as Node)) return;
+                          if ((e.target as HTMLElement).closest("button")) return;
+                      setSelected(trip);
+                      setOpenView(true);
+                    }}
+                  >
+                    <TableCell className="max-w-[240px]">
+                      <p className="truncate font-medium">{trip.purpose}</p>
+                      <p className="font-mono text-xs text-muted-foreground">{trip.ob_id}</p>
                     </TableCell>
-                    <TableCell className="font-medium">{trip.ob_id}</TableCell>
-                    <TableCell className="max-w-[160px] truncate">{trip.purpose}</TableCell>
-                    <TableCell>{trip.destination}</TableCell>
+                    <TableCell className="max-w-[220px]">
+                      <p className="truncate">{trip.destination}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {trip.vehicle.map((v) => v.vehicle_name).join(", ") || "No vehicle"}
+                      </p>
+                    </TableCell>
                     <TableCell>
-                      {trip.vehicle.map((v) => v.vehicle_name).join(", ") || "—"}
+                      <p className="font-medium">{format(new Date(trip.time_from), "EEE, MMM d · h:mm a")}</p>
+                      <p className="text-xs tabular-nums text-muted-foreground">
+                        until {format(new Date(trip.time_to), "MMM d, h:mm a")}
+                      </p>
                     </TableCell>
-                    <TableCell>{format(new Date(trip.time_from), "MMM d, h:mm a")}</TableCell>
-                    <TableCell>{format(new Date(trip.time_to), "MMM d, h:mm a")}</TableCell>
-                    <TableCell>{trip.passengers_qty}</TableCell>
+                    <TableCell className="text-right tabular-nums">{trip.passengers_qty}</TableCell>
                     <TableCell><StatusBadge status={trip.status} /></TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -595,71 +612,58 @@ export function ObReservations({
       {/* ------------------------------------------------------------ view */}
       {openView && selected && viewActions && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-full max-w-xl max-h-[85vh] overflow-y-auto relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-3 top-3 h-8 w-8 rounded-full"
-              onClick={() => setOpenView(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+          <Card className="relative w-full max-w-2xl max-h-[88vh] gap-0 overflow-y-auto py-0">
+            <DetailHeader
+              kind="OB trip"
+              reference={selected.ob_id}
+              title={selected.purpose}
+              status={selected.status}
+              onClose={() => setOpenView(false)}
+            />
 
-            <CardHeader>
-              <CardTitle>OB Trip Detail</CardTitle>
-              <CardDescription>OB ID: {selected.ob_id}</CardDescription>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-3">
-              <Detail label="Reserved By" value={selected.ob_user?.name ?? "—"} />
-              <Detail label="Purpose" value={selected.purpose} />
-              <Detail label="Destination" value={selected.destination} />
-              <Detail
-                label="Vehicles"
-                value={
-                  selected.vehicle
-                    .map((v) => v.vehicle_name + (v.plate_number ? ` (${v.plate_number})` : ""))
-                    .join(", ") || "—"
-                }
-              />
-              <Detail label="Driver" value={driverList(selected)} />
-              <div className="grid grid-cols-2 gap-3">
-                <Detail
-                  label="Departure"
-                  value={format(new Date(selected.time_from), "MMM d, yyyy h:mm a")}
-                />
-                <Detail
-                  label="Return"
-                  value={format(new Date(selected.time_to), "MMM d, yyyy h:mm a")}
-                />
+            <div className="flex flex-col gap-5 p-5">
+              <div className="rounded-md border border-border bg-neutral-50 px-4 py-3">
+                <StatusSteps status={selected.status} />
               </div>
-              <Detail label="Passengers" value={String(selected.passengers_qty)} />
-              <Detail label="Other Request" value={selected.other_request || "—"} />
-              <Detail label="Status" value={statusLabel(selected.status)} />
+
+              <DetailGrid>
+                <DetailItem label="Destination" value={selected.destination} />
+                <DetailItem label="Passengers" value={String(selected.passengers_qty)} />
+                <DetailItem label="Departure" value={format(new Date(selected.time_from), "EEE, MMM d, yyyy · h:mm a")} />
+                <DetailItem label="Return" value={format(new Date(selected.time_to), "EEE, MMM d, yyyy · h:mm a")} />
+                <DetailItem
+                  label="Vehicle"
+                  value={selected.vehicle
+                    .map((v) => v.vehicle_name + (v.plate_number ? ` (${v.plate_number})` : ""))
+                    .join(", ")}
+                />
+                <DetailItem label="Driver" value={driverList(selected)} />
+                <DetailItem label="Reserved by" value={selected.ob_user?.name} />
+                <DetailItem wide label="Other request" value={selected.other_request || "None"} />
+              </DetailGrid>
 
               {cancellationData?.cancellation && (
-                <div>
-                  <label className="text-xs text-muted-foreground">Cancellation Reason</label>
-                  <p className="font-medium">{cancellationData.cancellation.reason}</p>
-                  <label className="text-xs text-muted-foreground mt-2 block">Proof</label>
+                <div className="rounded-md border border-orange-200 bg-orange-50 p-4 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-800">Cancellation request</p>
+                  <p className="mt-1.5">{cancellationData.cancellation.reason}</p>
                   <a
                     href={`/api/uploads/cancellations/${cancellationData.cancellation.path.split("/").pop()}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-blue-600 underline text-sm font-medium"
+                    className="mt-2 inline-block text-xs font-medium text-brand underline"
                   >
-                    {cancellationData.cancellation.file_name}
+                    View proof: {cancellationData.cancellation.file_name}
                   </a>
                 </div>
               )}
-            </CardContent>
+            </div>
 
             {/* Same layout as the hall card: the wide button beside the small
                 Delete is Edit while that is allowed, otherwise Cancel. */}
-            <div className="flex flex-col gap-2 p-4 pt-0">
+            <div className="flex flex-col gap-2 border-t border-border p-5">
               {viewActions.done && (
                 <Button
-                  className="w-full bg-blue-700 rounded-sm py-5 text-white font-medium"
+                  className="w-full h-10"
                   disabled={busy || !isFinished(selected)}
                   onClick={() => handleDone(selected)}
                 >
@@ -671,7 +675,7 @@ export function ObReservations({
                 // Finished trip: only its receipt and Delete remain.
                 <div className="flex flex-col lg:flex-row gap-2">
                   <Button
-                    className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                    className="w-full lg:flex-1 h-10"
                     onClick={() =>
                       downloadReceipt({
                         kind: "OB Trip",
@@ -709,7 +713,7 @@ export function ObReservations({
                 <>
                   <div className="flex flex-col lg:flex-row gap-2">
                     <Button
-                      className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                      className="w-full lg:flex-1 h-10"
                       onClick={() => startEdit(selected)}
                     >
                       Edit Trip
@@ -736,7 +740,7 @@ export function ObReservations({
 
       {/* ------------------------------------------------------------ edit */}
       <Sheet open={openEdit} onOpenChange={setOpenEdit}>
-        <SheetContent side="right" className="overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">Edit OB Trip</SheetTitle>
             <SheetDescription className="text-white">
@@ -744,17 +748,18 @@ export function ObReservations({
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Trip details">
             <Field label="Purpose">
               <Input
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+               
                 value={form.purpose}
                 onChange={(e) => setForm({ ...form, purpose: e.target.value })}
               />
             </Field>
             <Field label="Destination">
               <Input
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+               
                 value={form.destination}
                 onChange={(e) => setForm({ ...form, destination: e.target.value })}
               />
@@ -763,17 +768,19 @@ export function ObReservations({
               <Input
                 type="number"
                 min={1}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+               
                 value={form.passengers_qty}
                 onChange={(e) => setForm({ ...form, passengers_qty: e.target.value })}
               />
             </Field>
+            </FormSection>
 
-            <div className="grid grid-cols-2 gap-4">
+            <FormSection step={2} title="Schedule">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Departure Date">
                 <Input
                   type="date"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                 
                   value={form.date_departure}
                   onChange={(e) => setForm({ ...form, date_departure: e.target.value })}
                 />
@@ -781,18 +788,18 @@ export function ObReservations({
               <Field label="Departure Time">
                 <Input
                   type="time"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                 
                   value={form.time_from}
                   onChange={(e) => setForm({ ...form, time_from: e.target.value })}
                 />
               </Field>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3">
               <Field label="Return Date">
                 <Input
                   type="date"
                   min={form.date_departure || undefined}
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                 
                   value={form.date_return}
                   onChange={(e) => setForm({ ...form, date_return: e.target.value })}
                 />
@@ -800,14 +807,15 @@ export function ObReservations({
               <Field label="Return Time">
                 <Input
                   type="time"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                 
                   value={form.time_to}
                   onChange={(e) => setForm({ ...form, time_to: e.target.value })}
                 />
               </Field>
             </div>
+            </FormSection>
 
-            <Field label="Vehicles">
+            <FormSection step={3} title="Vehicle">
               {!windowComplete ? (
                 <p className="text-sm text-muted-foreground">
                   Set the schedule first to see which vehicles are free.
@@ -815,7 +823,7 @@ export function ObReservations({
               ) : availabilityLoading ? (
                 <p className="text-sm text-muted-foreground">Checking availability...</p>
               ) : (
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
+                <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1">
                   {(vehicleData?.data ?? []).map((v: any) => {
                     const reason = busyVehicles.has(v.vehicle_id)
                       ? "Booked"
@@ -824,24 +832,24 @@ export function ObReservations({
                         : v.status === "MAINTENANCE"
                           ? "Maintenance"
                           : null;
+                    const selected = form.vehicle.includes(v.vehicle_id);
                     return (
-                      <CheckRow
+                      <SelectCard
                         key={v.vehicle_id}
-                        id={`edit-ob-vehicle-${v.vehicle_id}`}
-                        checked={form.vehicle.includes(v.vehicle_id)}
-                        reason={reason}
+                        selected={selected}
+                        disabled={!!reason && !selected}
                         onToggle={() => toggle("vehicle", v.vehicle_id)}
-                        label={`${v.vehicle_name}${v.plate_number ? ` (${v.plate_number})` : ""}${
-                          v.capacity ? ` - ${v.capacity} seats` : ""
-                        }`}
+                        title={v.vehicle_name}
+                        subtitle={[v.plate_number, v.capacity ? `${v.capacity} seats` : null].filter(Boolean).join(" · ")}
+                        badge={reason ?? undefined}
                       />
                     );
                   })}
                 </div>
               )}
-            </Field>
+            </FormSection>
 
-            <Field label="Driver">
+            <FormSection step={4} title="Driver">
               {!windowComplete ? (
                 <p className="text-sm text-muted-foreground">
                   Set the schedule first to see which drivers are free.
@@ -849,71 +857,67 @@ export function ObReservations({
               ) : availabilityLoading ? (
                 <p className="text-sm text-muted-foreground">Checking availability...</p>
               ) : (
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
+                <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                   {(driverData?.data ?? []).map((dr: any) => {
                     const reason = busyDrivers.has(dr.driver_id)
-                      ? "On another trip"
+                      ? "Unavailable"
                       : dr.status === "ON_LEAVE"
                         ? "On leave"
                         : null;
+                    const selected = form.drivers.includes(dr.driver_id);
                     return (
-                      <CheckRow
+                      <SelectCard
                         key={dr.driver_id}
-                        id={`edit-ob-driver-${dr.driver_id}`}
-                        checked={form.drivers.includes(dr.driver_id)}
-                        reason={reason}
+                        selected={selected}
+                        disabled={!!reason && !selected}
                         onToggle={() => toggle("drivers", dr.driver_id)}
-                        label={dr.driver_name}
+                        title={dr.driver_name}
+                        badge={reason ?? undefined}
                       />
                     );
                   })}
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="edit-ob-driver-personal"
-                      checked={form.personal_driver}
-                      onCheckedChange={(checked) =>
-                        setForm({
-                          ...form,
-                          personal_driver: checked === true,
-                          driver_name: checked === true ? form.driver_name : "",
-                        })
-                      }
-                    />
-                    <label htmlFor="edit-ob-driver-personal" className="font-normal cursor-pointer">
-                      Personal driver
-                    </label>
-                  </div>
+                  <SelectCard
+                    selected={form.personal_driver}
+                    onToggle={() =>
+                      setForm({
+                        ...form,
+                        personal_driver: !form.personal_driver,
+                        driver_name: form.personal_driver ? "" : form.driver_name,
+                      })
+                    }
+                    title="Personal driver"
+                    subtitle="Bring your own driver"
+                  />
                 </div>
               )}
               {form.personal_driver && (
                 <Input
                   placeholder="Personal driver's name"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                 
                   value={form.driver_name}
                   onChange={(e) => setForm({ ...form, driver_name: e.target.value })}
                 />
               )}
-            </Field>
-
             <Field label="Other Request">
               <Textarea
-                className="resize-none rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className="resize-none"
                 value={form.other_request}
                 onChange={(e) => setForm({ ...form, other_request: e.target.value })}
               />
             </Field>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleUpdate}
               disabled={busy}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update OB Trip
             </Button>
             <SheetClose asChild>
-              <Button variant="outline" className="w-full rounded-sm py-5 font-medium">
+              <Button variant="outline" className="w-full h-10">
                 Cancel
               </Button>
             </SheetClose>
@@ -935,32 +939,29 @@ export function ObReservations({
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="font-bold">Cancel this OB trip?</DialogTitle>
-            <DialogDescription className="text-gray-600">
-              This sends a cancellation request
-              {selected ? ` for your trip to ${selected.destination}` : ""}. Please
-              provide a reason and supporting proof.
+            <DialogDescription>
+              {selected
+                ? `${selected.destination} · ${format(new Date(selected.time_from), "EEE, MMM d, yyyy")}`
+                : ""}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-4 py-2">
-            <Field label="Reason for Cancellation">
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Your request goes to the admin for review. The trip stays active
+            until it is approved.
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <Field label="Reason">
               <Textarea
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
                 placeholder="Explain why this trip is being cancelled"
-                className="resize-none rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className="min-h-24 resize-none"
               />
             </Field>
-            <Field label="Proof (image or document)">
-              <Input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) => setCancelProof(e.target.files?.[0] ?? null)}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-              {cancelProof && (
-                <p className="text-xs text-muted-foreground">Selected: {cancelProof.name}</p>
-              )}
+            <Field label="Proof">
+              <ProofDropzone file={cancelProof} onChange={setCancelProof} />
             </Field>
           </div>
 
@@ -973,7 +974,7 @@ export function ObReservations({
               disabled={busy}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {busy ? "Cancelling..." : "Cancel Trip"}
+              {busy ? "Sending..." : "Request cancellation"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1020,8 +1021,8 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-1">
-      <label>{label}</label>
+    <div className="flex flex-col gap-1.5">
+      <label className="text-xs font-medium text-muted-foreground">{label}</label>
       {children}
     </div>
   );
@@ -1065,7 +1066,7 @@ function CheckRow({
 function CancelButton({ onClick, wide }: { onClick: () => void; wide?: boolean }) {
   return (
     <Button
-      className={`w-full ${wide ? "lg:flex-1" : ""} bg-yellow-600 rounded-sm py-5 text-white font-medium`}
+      className={`w-full ${wide ? "lg:flex-1" : ""} h-10 border border-border bg-white text-foreground hover:bg-neutral-50`}
       onClick={onClick}
     >
       Cancel Trip
@@ -1076,10 +1077,10 @@ function CancelButton({ onClick, wide }: { onClick: () => void; wide?: boolean }
 function DeleteButton({ onClick, small }: { onClick: () => void; small?: boolean }) {
   return (
     <Button
-      className={`w-full ${small ? "lg:w-20" : ""} bg-red-600 rounded-sm py-5 text-white font-medium`}
+      className={`w-full ${small ? "lg:w-10" : ""} h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50`}
       onClick={onClick}
     >
-      <Trash className="h-4 w-4 text-white" />
+      <Trash className="h-4 w-4" />
       <p className={small ? "block lg:hidden" : "ml-2"}>Delete</p>
     </Button>
   );

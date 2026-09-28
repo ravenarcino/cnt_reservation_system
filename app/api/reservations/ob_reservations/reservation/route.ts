@@ -101,7 +101,7 @@ export async function GET() {
     include: {
       vehicle: true,
       drivers: true,
-      ob_user: { select: { name: true } },
+      ob_user: { select: { name: true, email: true, department: true } },
     },
     orderBy: { createdAt: "desc" },
   });

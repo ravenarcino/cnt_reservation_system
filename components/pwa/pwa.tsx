@@ -9,8 +9,20 @@ export function Pwa() {
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
-    if (process.env.NODE_ENV === "production" && "serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    if ("serviceWorker" in navigator) {
+      if (process.env.NODE_ENV === "production") {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      } else {
+        // `next dev`: remove any service worker left over from testing a
+        // production build on this same localhost, and its caches -
+        // otherwise it keeps serving old pages and scripts.
+        navigator.serviceWorker
+          .getRegistrations()
+          .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+          .then(() => (window.caches ? caches.keys() : Promise.resolve([] as string[])))
+          .then((keys) => Promise.all(keys.filter((k) => k.startsWith("cnt-")).map((k) => caches.delete(k))))
+          .catch(() => {});
+      }
     }
 
     const update = () => setOffline(!navigator.onLine);

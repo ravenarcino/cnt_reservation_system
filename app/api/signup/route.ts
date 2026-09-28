@@ -2,12 +2,17 @@ import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 // POST /api/signup  { name, email, department, role, password, confirmPassword }
 // Public self sign-up. The account is always a regular USER and starts
 // UNREGISTERED, so it cannot sign in until an admin activates it in User
 // Management. Nothing in the body can raise the role or status.
 export async function POST(req: Request) {
+  // 5 sign-ups per 10 minutes per IP.
+  const limit = rateLimit(`signup:${clientIp(req)}`, 5, 10 * 60_000);
+  if (!limit.ok) return bad("Too many attempts. Please try again later.", 429);
+
   try {
     const body = await req.json();
     const name = String(body.name ?? "").trim();

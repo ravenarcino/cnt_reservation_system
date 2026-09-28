@@ -1,5 +1,10 @@
 "use client";
 
+import { FilterStrip, PageHeader, Segmented } from "@/components/management/parts";
+import { FormSection, FieldLabel } from "@/components/booking/form-parts";
+import { DetailGrid, DetailItem } from "@/components/booking/detail-parts";
+import { cn } from "@/lib/utils";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { DayOffRequests } from "@/components/ob/dayoff-requests";
@@ -7,7 +12,7 @@ import { DayOffRequests } from "@/components/ob/dayoff-requests";
 import React, { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, dateFnsLocalizer } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay } from "date-fns";
+import { format, parse, startOfWeek, getDay, differenceInCalendarDays } from "date-fns";
 import { enUS } from "date-fns/locale";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,7 +127,7 @@ export default function CalendarPage() {
   const [nwdForm, setNwdForm] = useState({
     date: "",
     description: "",
-    type: "",
+    type: "HOLIDAY",
   });
   const [openView, setOpenView] = useState(false);
   const [openEditForm, setOpenEditForm] = useState(false);
@@ -359,7 +364,7 @@ export default function CalendarPage() {
       setNwdForm({
         date: "",
         description: "",
-        type: "",
+        type: "HOLIDAY",
       });
 
       queryClient.invalidateQueries({
@@ -478,68 +483,80 @@ export default function CalendarPage() {
     }
   };
 
+  // Non-working days split for the summary strip. A strip bucket filters
+  // on the client over every entry; "all" uses the paged API list.
+  const [nwdFilter, setNwdFilter] = useState("all");
+  const allNwd: NoWorkDay[] = nwdAllData?.data ?? [];
+  const daysAway = (d: NoWorkDay) => differenceInCalendarDays(new Date(d.date), new Date());
+  const nwdBucket = (d: NoWorkDay) =>
+    daysAway(d) < 0 ? "PAST" : d.type === "HOLIDAY" ? "HOLIDAY" : "CUSTOM";
+  const q = search.trim().toLowerCase();
+  const nwdRows: NoWorkDay[] =
+    nwdFilter === "all"
+      ? noWorkDays
+      : allNwd
+          .filter((d) => nwdBucket(d) === nwdFilter && (!q || d.description.toLowerCase().includes(q)))
+          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  const nextNwd = allNwd
+    .filter((d) => daysAway(d) >= 0)
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+
   return (
     <div className="h-full flex flex-col gap-5">
-      <div className="flex flex-col lg:flex-row items-center justify-between">
-        <div>
-          <h1 className="page-title">
-            OB Calendar Management
-          </h1>
-          <p className="text-sm text-muted-foreground text-wrap">
-            Manage non-working days for OB reservations
-          </p>
+      <PageHeader title="OB calendar" count={allNwd.length} subtitle="Non-working days, trips and driver day offs">
+        <div className="w-full sm:w-52">
+          <Segmented
+            value={changeMode ? "calendar" : "list"}
+            onChange={(v) => setChangeMode(v === "calendar")}
+            options={[
+              { value: "list", label: "List" },
+              { value: "calendar", label: "Calendar" },
+            ]}
+          />
         </div>
-        <div className="flex flex-col gap-2 w-full lg:w-fit">
-          <Button
-            onClick={() => setOpenNwdForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Non-working Day
-          </Button>
+        <Button onClick={() => setOpenNwdForm(true)}>+ Add non-working day</Button>
+      </PageHeader>
 
-          {changeMode ? (
-            <Button
-              onClick={() => setChangeMode(false)}
-              className="w-full bg-brand text-white px-4 py-4 rounded-sm font-medium "
-            >
-              View Table
-            </Button>
-          ) : (
-            <Button
-              onClick={() => setChangeMode(true)}
-              className="w-full bg-brand text-white px-4 py-4 rounded-sm font-medium "
-            >
-              View Calendar
-            </Button>
-          )}
-        </div>
-      </div>
-      {!changeMode && (
-        <div className="flex flex-col lg:flex-row gap-3">
-          <div className="relative lg:w-full lg:max-w-sm">
-            <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+      <FilterStrip
+        title={nextNwd ? `Next non-working day: ${format(new Date(nextNwd.date), "EEE, MMM d")} · ${nextNwd.description}` : "Non-working days"}
+        total={allNwd.length}
+        active={nwdFilter}
+        onSelect={(key) => {
+          setNwdFilter(key);
+          setChangeMode(false);
+          setPage(1);
+        }}
+        items={[
+          { key: "HOLIDAY", label: "Upcoming holidays", color: "#dc2626", count: allNwd.filter((d) => nwdBucket(d) === "HOLIDAY").length },
+          { key: "CUSTOM", label: "Upcoming custom days", color: "#f59e0b", count: allNwd.filter((d) => nwdBucket(d) === "CUSTOM").length },
+          { key: "PAST", label: "Past", color: "#a3a3a3", count: allNwd.filter((d) => nwdBucket(d) === "PAST").length },
+        ]}
+      />
 
-            <Input
-              placeholder="Search non-working day"
-              className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-        </div>
-      )}
       {changeMode ? (
-        <div className="w-full flex flex-row justify-center">
-          <div className="w-full lg:w-2/3 rounded-xl border bg-white p-4 shadow">
+        <div className="rounded-lg border border-border bg-white p-4">
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            {[
+              ["#dcfce7", "Open"],
+              ["#fee2e2", "Fully booked"],
+              ["#e5e7eb", "Non-working day"],
+              ["#f3f4f6", "Past"],
+            ].map(([c, l]) => (
+              <span key={l} className="inline-flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm ring-1 ring-inset ring-black/5" style={{ backgroundColor: c }} />
+                {l}
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1.5">
+              <User className="h-3 w-3" /> Bookings that day
+            </span>
+          </div>
             <Calendar
               localizer={localizer}
               events={calendarEvents}
               startAccessor="start"
               endAccessor="end"
-              style={{ height: 700 }}
+              style={{ height: 680 }}
               view={calendarView as any}
               onView={(view) => setCalendarView(view)}
               date={calendarDate}
@@ -558,12 +575,13 @@ export default function CalendarPage() {
               eventPropGetter={(event: any) => {
                 const status = event.resource?.status;
                 const colorMap: Record<string, string> = {
-                  APPROVED: "#16a34a",
-                  PENDING: "#ca8a04",
-                  FOR_APPROVAL: "#ca8a04",
-                  FOR_REVIEW: "#ea580c",
-                  DECLINED: "#dc2626",
-                  CANCELLED: "#6b7280",
+                  APPROVED: "#10b981",
+                  PENDING: "#f59e0b",
+                  FOR_APPROVAL: "#f97316",
+                  FOR_REVIEW: "#f97316",
+                  DECLINED: "#ef4444",
+                  CANCELLED: "#a3a3a3",
+                  DONE: "#0ea5e9",
                 };
                 return {
                   style: {
@@ -577,37 +595,52 @@ export default function CalendarPage() {
                 style: getDayStyle(date),
               })}
             />
-          </div>
         </div>
       ) : (
         <div className="flex h-full flex-col">
           <Tabs defaultValue="nwd" className="w-full">
             <TabsList>
-              <TabsTrigger value="nwd">Non Working Days</TabsTrigger>
-              <TabsTrigger value="dr">Dayoff Request</TabsTrigger>
+              <TabsTrigger value="nwd">Non-working days</TabsTrigger>
+              <TabsTrigger value="dr">Day-off requests</TabsTrigger>
             </TabsList>
-            <TabsContent value="nwd">
-              <div className="flex-1 overflow-auto rounded-md border">
+            <TabsContent value="nwd" className="mt-3">
+              <div className="flex flex-col gap-3 lg:flex-row">
+                <div className="relative lg:w-full lg:max-w-sm">
+                  <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by description"
+                    className="pl-9"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex-1 overflow-auto rounded-lg border border-border bg-white">
                 <Table>
                   {nwdLoading ? (
                     <TableBody>
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-10">
+                        <TableCell colSpan={4} className="py-10 text-center">
                           <div className="flex items-center justify-center gap-2 text-muted-foreground">
                             <Spinner />
-                            <span>Loading data</span>
+                            <span>Loading non-working days</span>
                           </div>
                         </TableCell>
                       </TableRow>
                     </TableBody>
-                  ) : noWorkDays.length === 0 ? (
+                  ) : nwdRows.length === 0 ? (
                     <TableBody>
                       <TableRow>
-                        <TableCell
-                          colSpan={6}
-                          className="text-center py-10 text-muted-foreground"
-                        >
-                          <EmptyState title="No non-working days found" description="Add a non-working day to block it on the calendar." />
+                        <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                          <EmptyState
+                            title="No non-working days found"
+                            description="Add one to block the date on the calendar."
+                            action={<Button size="sm" onClick={() => setOpenNwdForm(true)}>+ Add non-working day</Button>}
+                          />
                         </TableCell>
                       </TableRow>
                     </TableBody>
@@ -615,93 +648,111 @@ export default function CalendarPage() {
                     <>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>No.</TableHead>
-                          <TableHead>NWD ID</TableHead>
                           <TableHead>Date</TableHead>
                           <TableHead>Description</TableHead>
                           <TableHead>Type</TableHead>
-                          <TableHead>Action</TableHead>
+                          <TableHead className="w-12" />
                         </TableRow>
                       </TableHeader>
 
                       <TableBody>
-                        {noWorkDays.map((nwd, index) => (
-                          <TableRow key={nwd.nwd_id}>
-                            <TableCell className="font-medium">
-                              {index + 1 + (page - 1) * limit}
-                            </TableCell>
+                        {nwdRows.map((nwd) => {
+                          const away = daysAway(nwd);
+                          const d = new Date(nwd.date);
+                          return (
+                            <TableRow
+                              key={nwd.nwd_id}
+                              className={cn("cursor-pointer", away < 0 && "text-muted-foreground")}
+                              onClick={(e) => {
+                                // The action menu renders in a portal; ignore its clicks.
+                                if (!e.currentTarget.contains(e.target as Node)) return;
+                                if ((e.target as HTMLElement).closest("button")) return;
+                                setSelectedNwd(nwd);
+                                setOpenView(true);
+                              }}
+                            >
+                              <TableCell>
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-md border border-border bg-white leading-none">
+                                    <span className="text-[10px] font-semibold uppercase text-brand">{format(d, "MMM")}</span>
+                                    <span className="mt-0.5 text-base font-semibold tabular-nums text-foreground">{format(d, "d")}</span>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-medium text-foreground">{format(d, "EEEE")}</p>
+                                    <p className="text-xs text-muted-foreground">
+                                      {away === 0 ? "Today" : away === 1 ? "Tomorrow" : away > 0 ? `In ${away} days` : format(d, "yyyy")}
+                                    </p>
+                                  </div>
+                                </div>
+                              </TableCell>
 
-                            <TableCell className="font-medium">
-                              {nwd.nwd_id}
-                            </TableCell>
+                              <TableCell className="max-w-md whitespace-normal">{nwd.description}</TableCell>
 
-                            <TableCell>
-                              {format(new Date(nwd.date), "MMM d, yyyy")}
-                            </TableCell>
+                              <TableCell>
+                                <span
+                                  className={cn(
+                                    "inline-flex rounded px-1.5 py-0.5 text-xs font-medium ring-1 ring-inset",
+                                    nwd.type === "HOLIDAY"
+                                      ? "bg-red-50 text-red-700 ring-red-200"
+                                      : "bg-neutral-100 text-neutral-700 ring-neutral-200",
+                                  )}
+                                >
+                                  {nwd.type === "HOLIDAY" ? "Holiday" : "Custom"}
+                                </span>
+                              </TableCell>
 
-                            <TableCell>{nwd.description}</TableCell>
-
-                            <TableCell>
-                              {nwd.type === "HOLIDAY" ? "Holiday" : "Custom"}
-                            </TableCell>
-
-                            <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost">
-                                    <Ellipsis />
-                                  </Button>
-                                </DropdownMenuTrigger>
-
-                                <DropdownMenuContent className="">
-                                  <DropdownMenuGroup>
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setSelectedNwd(nwd);
-                                        setOpenView(true);
-                                      }}
-                                    >
-                                      View
-                                    </DropdownMenuItem>
-
-                                    <DropdownMenuItem
-                                      onClick={() => {
-                                        setSelectedNwd(nwd);
-                                        setEditNwdForm({
-                                          date: format(
-                                            new Date(nwd.date),
-                                            "yyyy-MM-dd",
-                                          ),
-                                          description: nwd.description,
-                                          type: nwd.type,
-                                        });
-                                        setOpenEditForm(true);
-                                      }}
-                                    >
-                                      Edit
-                                    </DropdownMenuItem>
-
-                                    <DropdownMenuItem
-                                      variant="destructive"
-                                      onClick={() => {
-                                        setSelectedNwd(nwd);
-                                        setOpenDeleteDialog(true);
-                                      }}
-                                    >
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuGroup>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                              <TableCell>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost">
+                                      <Ellipsis />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuGroup>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setSelectedNwd(nwd);
+                                          setOpenView(true);
+                                        }}
+                                      >
+                                        View
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        onClick={() => {
+                                          setSelectedNwd(nwd);
+                                          setEditNwdForm({
+                                            date: format(new Date(nwd.date), "yyyy-MM-dd"),
+                                            description: nwd.description,
+                                            type: nwd.type,
+                                          });
+                                          setOpenEditForm(true);
+                                        }}
+                                      >
+                                        Edit
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        variant="destructive"
+                                        onClick={() => {
+                                          setSelectedNwd(nwd);
+                                          setOpenDeleteDialog(true);
+                                        }}
+                                      >
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuGroup>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </>
                   )}
                 </Table>
               </div>
-              <Pagination className="mt-4 justify-center lg:justify-end">
+              <Pagination className={nwdFilter === "all" ? "mt-4 justify-center lg:justify-end" : "hidden"}>
                 <PaginationContent>
                   <PaginationItem>
                     <PaginationPrevious
@@ -736,7 +787,7 @@ export default function CalendarPage() {
                 </PaginationContent>
               </Pagination>
             </TabsContent>
-            <TabsContent value="dr">
+            <TabsContent value="dr" className="mt-3">
               <DayOffRequests />
             </TabsContent>
           </Tabs>
@@ -744,84 +795,61 @@ export default function CalendarPage() {
       )}
 
       <Sheet open={openNwdForm} onOpenChange={setOpenNwdForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add Non-Working Day
+              New non-working day
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in the non-working day details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            {/* Date */}
-            <div className="flex flex-col gap-1">
-              <label>Date</label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Date" hint="Bookings are blocked on this day.">
               <Input
                 type="date"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 value={nwdForm.date}
-                onChange={(e) =>
-                  setNwdForm({ ...nwdForm, date: e.target.value })
-                }
+                onChange={(e) => setNwdForm({ ...nwdForm, date: e.target.value })}
               />
-            </div>
+            </FormSection>
 
-            {/* Description */}
-            <div className="flex flex-col gap-1">
-              <label>Description</label>
-              <Textarea
-                placeholder="e.g. Christmas Day, Founder's Day"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={nwdForm.description}
-                onChange={(e) =>
-                  setNwdForm({ ...nwdForm, description: e.target.value })
-                }
-              />
-            </div>
-
-            {/* Type */}
-            <div className="flex flex-col gap-1">
-              <label>Type</label>
-
-              <Select
-                value={nwdForm.type}
-                onValueChange={(value) =>
-                  setNwdForm({
-                    ...nwdForm,
-                    type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder={"Type"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>Type</SelectLabel>
-                    <SelectItem value="CUSTOM">Custom</SelectItem>
-                    <SelectItem value="HOLIDAY">Holiday</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection step={2} title="Details">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Description</FieldLabel>
+                <Textarea
+                  placeholder="e.g. Christmas Day, Founder's Day"
+                  value={nwdForm.description}
+                  onChange={(e) => setNwdForm({ ...nwdForm, description: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Type</FieldLabel>
+                <Segmented
+                  value={(nwdForm.type || "HOLIDAY") as "HOLIDAY" | "CUSTOM"}
+                  onChange={(v) => setNwdForm({ ...nwdForm, type: v })}
+                  options={[
+                    { value: "HOLIDAY", label: "Holiday" },
+                    { value: "CUSTOM", label: "Custom" },
+                  ]}
+                />
+              </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleCreateNwd}
               disabled={creating}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              {creating ? "Creating..." : "Create Non-Working Day"}
+              {creating ? "Creating..." : "Add non-working day"}
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -832,51 +860,48 @@ export default function CalendarPage() {
 
       {/* View Non-Working Day */}
       <Sheet open={openView} onOpenChange={setOpenView}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Non-Working Day Detail
+              Non-working day
             </SheetTitle>
             <SheetDescription className="text-white">
               Review the non-working day details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
-              NWD ID: {selectedNwd?.nwd_id}
-            </label>
-
-            <div className="flex flex-col">
-              <label>Date</label>
-              <Input
+          <div className="flex flex-col gap-5 p-4">
+            <div className="flex items-center gap-4 rounded-lg border border-border bg-neutral-50 p-4">
+              <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-md border border-border bg-white leading-none">
+                <span className="text-[11px] font-semibold uppercase text-brand">
+                  {selectedNwd ? format(new Date(selectedNwd.date), "MMM") : ""}
+                </span>
+                <span className="mt-1 text-xl font-semibold tabular-nums">
+                  {selectedNwd ? format(new Date(selectedNwd.date), "d") : ""}
+                </span>
+              </div>
+              <div className="min-w-0">
+                <p className="font-mono text-[11px] text-muted-foreground">{selectedNwd?.nwd_id}</p>
+                <p className="text-lg font-semibold leading-tight">{selectedNwd?.description}</p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedNwd ? format(new Date(selectedNwd.date), "EEEE, MMMM d, yyyy") : ""}
+                </p>
+              </div>
+            </div>
+            <DetailGrid>
+              <DetailItem label="Type" value={selectedNwd?.type === "HOLIDAY" ? "Holiday" : "Custom"} />
+              <DetailItem
+                label="When"
                 value={
-                  selectedNwd?.date
-                    ? format(new Date(selectedNwd.date), "MMM d, yyyy")
+                  selectedNwd
+                    ? (() => {
+                        const a = daysAway(selectedNwd);
+                        return a === 0 ? "Today" : a === 1 ? "Tomorrow" : a > 0 ? `In ${a} days` : `${-a} days ago`;
+                      })()
                     : ""
                 }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Description</label>
-              <Input
-                value={selectedNwd?.description ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Type</label>
-              <Input
-                value={selectedNwd?.type === "HOLIDAY" ? "Holiday" : "Custom"}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
+            </DetailGrid>
           </div>
 
           <SheetFooter>
@@ -892,7 +917,7 @@ export default function CalendarPage() {
                 }
                 setOpenEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Edit
             </Button>
@@ -901,7 +926,7 @@ export default function CalendarPage() {
               <Button
                 variant="destructive"
                 onClick={() => setOpenDeleteDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Delete
               </Button>
@@ -912,90 +937,60 @@ export default function CalendarPage() {
 
       {/* Edit Non-Working Day */}
       <Sheet open={openEditForm} onOpenChange={setOpenEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Non-Working Day
+              Edit non-working day
             </SheetTitle>
             <SheetDescription className="text-white">
               Update the non-working day details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
-              NWD ID: {selectedNwd?.nwd_id}
-            </label>
-
-            {/* Date */}
-            <div className="flex flex-col gap-1">
-              <label>Date</label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Date" hint="Bookings are blocked on this day.">
               <Input
                 type="date"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 value={editNwdForm.date}
-                onChange={(e) =>
-                  setEditNwdForm({ ...editNwdForm, date: e.target.value })
-                }
+                onChange={(e) => setEditNwdForm({ ...editNwdForm, date: e.target.value })}
               />
-            </div>
+            </FormSection>
 
-            {/* Description */}
-            <div className="flex flex-col gap-1">
-              <label>Description</label>
-              <Textarea
-                placeholder="e.g. Christmas Day, Founder's Day"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={editNwdForm.description}
-                onChange={(e) =>
-                  setEditNwdForm({
-                    ...editNwdForm,
-                    description: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Type */}
-            <div className="flex flex-col gap-1">
-              <label>Type</label>
-
-              <Select
-                value={editNwdForm.type}
-                onValueChange={(value) =>
-                  setEditNwdForm({
-                    ...editNwdForm,
-                    type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder={"Type"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>Type</SelectLabel>
-                    <SelectItem value="CUSTOM">Custom</SelectItem>
-                    <SelectItem value="HOLIDAY">Holiday</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection step={2} title="Details">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Description</FieldLabel>
+                <Textarea
+                  placeholder="e.g. Christmas Day, Founder's Day"
+                  value={editNwdForm.description}
+                  onChange={(e) => setEditNwdForm({ ...editNwdForm, description: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Type</FieldLabel>
+                <Segmented
+                  value={(editNwdForm.type || "HOLIDAY") as "HOLIDAY" | "CUSTOM"}
+                  onChange={(v) => setEditNwdForm({ ...editNwdForm, type: v })}
+                  options={[
+                    { value: "HOLIDAY", label: "Holiday" },
+                    { value: "CUSTOM", label: "Custom" },
+                  ]}
+                />
+              </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleUpdateNwd}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Update Non-Working Day
+              Save changes
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>

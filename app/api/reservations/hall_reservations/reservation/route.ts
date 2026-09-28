@@ -177,7 +177,8 @@ export async function GET(req: Request) {
     include: {
       hall: true,
       equipment: true,
-      hall_user: true,
+      // Never send the password hash / reset token to the browser.
+      hall_user: { select: { name: true, email: true, department: true } },
     },
     // skip: (page - 1) * limit,
     // take: limit,

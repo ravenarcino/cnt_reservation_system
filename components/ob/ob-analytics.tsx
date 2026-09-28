@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { Car, CalendarCheck, Clock, IdCard, Plane } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartCard, DonutChart, HBarChart, STATUS_COLORS, VBarChart } from "@/components/dashboard/charts";
 
 // OB (official business) analytics, shared by the super admin dashboard, the
 // OB admin dashboard and the report pages. One implementation so every page
@@ -23,15 +24,6 @@ export type ObTripRow = {
   ob_user?: { name: string } | null;
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  APPROVED: "#16a34a",
-  PENDING: "#ca8a04",
-  FOR_APPROVAL: "#ca8a04",
-  FOR_REVIEW: "#ea580c",
-  DECLINED: "#dc2626",
-  CANCELLED: "#6b7280",
-  DONE: "#2563eb",
-};
 
 function countBy<T>(rows: T[], key: (r: T) => string | string[]) {
   const counts: Record<string, number> = {};
@@ -60,7 +52,7 @@ export function useObStats(trips: ObTripRow[]) {
       .map(([label, value]) => ({
         label,
         value,
-        color: STATUS_COLORS[label] ?? "#2563eb",
+        color: STATUS_COLORS[label] ?? "#0ea5e9",
       }))
       .sort((a, b) => b.value - a.value);
 
@@ -85,7 +77,7 @@ export function useObStats(trips: ObTripRow[]) {
     const topDestinations = Object.entries(
       countBy(active, (t) => t.destination.trim() || "—"),
     )
-      .map(([label, value]) => ({ label, value, color: "#2563eb" }))
+      .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
@@ -165,22 +157,22 @@ export function ObAnalytics({
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="OB Trips by Status">
+        <ChartCard title="By status" subtitle="All OB trips">
           <DonutChart data={stats.byStatus} emptyLabel="No OB trips" />
         </ChartCard>
 
         {showOverTime && (
-          <ChartCard title="OB Trips Over Time">
+          <ChartCard title="Over time" subtitle="Trips per month">
             <VBarChart data={stats.byMonth} emptyLabel="No OB trips" />
           </ChartCard>
         )}
 
-        <ChartCard title="Top Vehicles">
+        <ChartCard title="Top vehicles" subtitle="Most used, excluding cancelled">
           <HBarChart data={stats.topVehicles} emptyLabel="No vehicle usage" />
         </ChartCard>
 
         {showDestinations && (
-          <ChartCard title="Top Destinations">
+          <ChartCard title="Top destinations" subtitle="Most visited">
             <HBarChart data={stats.topDestinations} emptyLabel="No destinations" />
           </ChartCard>
         )}
@@ -191,133 +183,9 @@ export function ObAnalytics({
 
 // ---------------------------------------------------------------- pieces
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <Card className="shadow-sm">
-      <CardHeader>
-        <CardTitle className="text-sm">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>{children}</CardContent>
-    </Card>
-  );
-}
 
-function DonutChart({
-  data,
-  emptyLabel = "No data",
-}: {
-  data: { label: string; value: number; color?: string }[];
-  emptyLabel?: string;
-}) {
-  const total = data.reduce((s, d) => s + d.value, 0);
-  if (data.length === 0 || total === 0) {
-    return <p className="text-sm text-muted-foreground py-6">{emptyLabel}</p>;
-  }
 
-  const palette = ["#16a34a", "#2563eb", "#ca8a04", "#dc2626", "#7c3aed", "#0891b2", "#ea580c", "#6b7280"];
 
-  let acc = 0;
-  const segments = data
-    .map((d, i) => {
-      const start = (acc / total) * 360;
-      acc += d.value;
-      const end = (acc / total) * 360;
-      return `${d.color ?? palette[i % palette.length]} ${start}deg ${end}deg`;
-    })
-    .join(", ");
-
-  return (
-    <div className="flex flex-col sm:flex-row items-center gap-4">
-      <div className="relative h-40 w-40 shrink-0">
-        <div
-          className="h-full w-full rounded-full"
-          style={{ background: `conic-gradient(${segments})` }}
-        />
-        <div className="absolute inset-0 m-auto h-20 w-20 rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
-          <span className="text-lg font-bold">{total}</span>
-          <span className="text-[10px] text-muted-foreground">Total</span>
-        </div>
-      </div>
-      <div className="flex flex-col gap-1.5 w-full">
-        {data.map((d, i) => (
-          <div key={d.label} className="flex items-center gap-2 text-xs">
-            <span
-              className="h-3 w-3 rounded-sm shrink-0"
-              style={{ backgroundColor: d.color ?? palette[i % palette.length] }}
-            />
-            <span className="font-medium">{d.label}</span>
-            <span className="text-muted-foreground ml-auto">
-              {d.value} ({Math.round((d.value / total) * 100)}%)
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function HBarChart({
-  data,
-  emptyLabel = "No data",
-}: {
-  data: { label: string; value: number; color?: string }[];
-  emptyLabel?: string;
-}) {
-  const max = Math.max(1, ...data.map((d) => d.value));
-  if (data.length === 0) {
-    return <p className="text-sm text-muted-foreground py-6">{emptyLabel}</p>;
-  }
-  return (
-    <div className="flex flex-col gap-3">
-      {data.map((d) => (
-        <div key={d.label} className="flex flex-col gap-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium">{d.label}</span>
-            <span className="text-muted-foreground">{d.value}</span>
-          </div>
-          <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${(d.value / max) * 100}%`,
-                backgroundColor: d.color ?? "#16a34a",
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function VBarChart({
-  data,
-  emptyLabel = "No data",
-}: {
-  data: { label: string; value: number }[];
-  emptyLabel?: string;
-}) {
-  const max = Math.max(1, ...data.map((d) => d.value));
-  if (data.length === 0) {
-    return <p className="text-sm text-muted-foreground py-6">{emptyLabel}</p>;
-  }
-  return (
-    <div className="flex items-end gap-2 h-48">
-      {data.map((d) => (
-        <div key={d.label} className="flex flex-1 flex-col items-center justify-end gap-1">
-          <span className="text-[10px] text-muted-foreground">{d.value}</span>
-          <div
-            className="w-full rounded-t bg-brand transition-all"
-            style={{ height: `${(d.value / max) * 100}%`, minHeight: "2px" }}
-          />
-          <span className="text-[10px] text-muted-foreground truncate w-full text-center">
-            {d.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 function StatCard({
   title,

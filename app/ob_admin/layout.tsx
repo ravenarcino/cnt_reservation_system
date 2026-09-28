@@ -20,7 +20,7 @@ export default function ObAdminLayout({
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
         <AppSidebar role="OB_ADMIN" />
-        <main className="w-full">
+        <main className="min-w-0 flex-1">
           <AppTopbar />
           <div className="p-6">{children}</div>
         </main>

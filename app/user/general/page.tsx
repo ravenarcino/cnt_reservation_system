@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PasswordChecklist, PasswordField, PasswordStrength } from "@/components/account/password-field";
 import { Spinner } from "@/components/ui/spinner";
 import { toast } from "sonner";
 
@@ -202,6 +203,13 @@ export default function GeneralPage() {
     }
   };
 
+  const initials = (profile?.name ?? "")
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join("");
+
   return (
     <div className="h-full flex flex-col gap-5">
       <div>
@@ -211,178 +219,188 @@ export default function GeneralPage() {
         </p>
       </div>
 
-      <Tabs defaultValue="profile" className="w-full max-w-2xl">
-        <TabsList>
-          <TabsTrigger value="profile">Profile</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
+      {/* Profile header */}
+      <Card className="max-w-3xl flex-row items-center gap-4 px-5 py-5">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-brand-soft text-lg font-semibold text-brand">
+          {profileLoading ? <Spinner /> : initials || "?"}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold">{profile?.name ?? "—"}</p>
+          <p className="truncate text-sm text-muted-foreground">{profile?.email ?? ""}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {profile && (
+              <>
+                <span className="rounded border border-border bg-neutral-50 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                  {formatEnumLabel(profile.systemRole)}
+                </span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                    profile.status === "REGISTERED"
+                      ? "bg-emerald-50 text-emerald-800 ring-1 ring-inset ring-emerald-200"
+                      : "bg-amber-50 text-amber-800 ring-1 ring-inset ring-amber-200"
+                  }`}
+                >
+                  {profile.status === "REGISTERED" ? "Active" : formatEnumLabel(profile.status)}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="hidden text-right sm:block">
+          <p className="text-xs text-muted-foreground">Member since</p>
+          <p className="text-sm font-medium">
+            {profile ? new Date(profile.createdAt).toLocaleDateString(undefined, { dateStyle: "medium" }) : "—"}
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-muted-foreground">{profile?.user_id}</p>
+        </div>
+      </Card>
+
+      <Tabs defaultValue="profile" className="w-full max-w-3xl">
+        <TabsList variant="line" className="h-auto w-full justify-start gap-6 rounded-none border-b border-border p-0">
+          {[
+            ["profile", "Profile"],
+            ["security", "Security"],
+          ].map(([value, label]) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              className="flex-none px-0 pb-3 pt-1 text-sm font-medium normal-case tracking-normal after:bg-brand group-data-horizontal/tabs:after:bottom-[-1px] data-active:text-brand"
+            >
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
         <TabsContent value="profile">
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile</CardTitle>
-              <CardDescription>Update your personal information.</CardDescription>
-            </CardHeader>
+          <Card className="gap-0 py-0">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-sm font-semibold">Personal information</p>
+              <p className="text-xs text-muted-foreground">This is how you appear on reservations and logs.</p>
+            </div>
 
-            <CardContent className="flex flex-col gap-4">
+            <div className="p-5">
               {profileLoading ? (
-                <div className="flex items-center justify-center gap-2 text-muted-foreground py-10">
+                <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
                   <Spinner />
                   <span>Loading profile</span>
                 </div>
               ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-3 rounded-sm border p-3 bg-muted/30">
-                    <div>
-                      <label className="text-xs text-muted-foreground">User ID</label>
-                      <p className="font-medium">{profile?.user_id ?? "—"}</p>
-                    </div>
-
-                    <div>
-                      <label className="text-xs text-muted-foreground">Status</label>
-                      <p className="font-medium">
-                        {profile ? formatEnumLabel(profile.status) : "—"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="text-xs text-muted-foreground">System Role</label>
-                      <p className="font-medium">
-                        {profile ? formatEnumLabel(profile.systemRole) : "—"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="text-xs text-muted-foreground">Member Since</label>
-                      <p className="font-medium">
-                        {profile ? new Date(profile.createdAt).toLocaleDateString() : "—"}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <Label>Full Name</Label>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="acc-name" className="text-xs text-muted-foreground">Full name</Label>
                     <Input
+                      id="acc-name"
                       value={profileForm.name}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, name: e.target.value })
-                      }
-                      className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                      onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                     />
                   </div>
-
-                  <div className="flex flex-col gap-1">
-                    <Label>Email</Label>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="acc-email" className="text-xs text-muted-foreground">Email</Label>
                     <Input
+                      id="acc-email"
                       type="email"
                       value={profileForm.email}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, email: e.target.value })
-                      }
-                      className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                      onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                     />
                   </div>
-
-                  <div className="flex flex-col gap-1">
-                    <Label>Department</Label>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="acc-dept" className="text-xs text-muted-foreground">Department</Label>
                     <Input
+                      id="acc-dept"
                       value={profileForm.department}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, department: e.target.value })
-                      }
-                      className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                      onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })}
                     />
                   </div>
-
-                  <div className="flex flex-col gap-1">
-                    <Label>Role</Label>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="acc-role" className="text-xs text-muted-foreground">Position</Label>
                     <Input
+                      id="acc-role"
                       value={profileForm.role}
-                      onChange={(e) =>
-                        setProfileForm({ ...profileForm, role: e.target.value })
-                      }
-                      className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                      onChange={(e) => setProfileForm({ ...profileForm, role: e.target.value })}
                     />
                   </div>
-                </>
+                </div>
               )}
-            </CardContent>
+            </div>
 
-            <CardFooter>
-              <Button
-                onClick={handleUpdateProfile}
-                disabled={savingProfile || profileLoading}
-                className="w-full lg:w-auto bg-brand rounded-sm py-5 text-white font-medium"
-              >
-                {savingProfile ? "Saving..." : "Save Changes"}
+            <div className="flex justify-end border-t border-border bg-neutral-50 px-5 py-3">
+              <Button onClick={handleUpdateProfile} disabled={savingProfile || profileLoading}>
+                {savingProfile ? "Saving..." : "Save changes"}
               </Button>
-            </CardFooter>
+            </div>
           </Card>
         </TabsContent>
 
         <TabsContent value="security">
-          <Card>
-            <CardHeader>
-              <CardTitle>Security</CardTitle>
-              <CardDescription>Change your account password.</CardDescription>
-            </CardHeader>
+          <Card className="gap-0 py-0">
+            <div className="border-b border-border px-5 py-4">
+              <p className="text-sm font-semibold">Password</p>
+              <p className="text-xs text-muted-foreground">
+                {profile
+                  ? `Account last updated ${new Date(profile.updatedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}.`
+                  : "Change your account password."}
+              </p>
+            </div>
 
-            <CardContent className="flex flex-col gap-4">
-              {profile && (
-                <p className="text-xs text-muted-foreground">
-                  Last changed:{" "}
-                  {new Date(profile.updatedAt).toLocaleDateString(undefined, {
-                    dateStyle: "medium",
-                  })}
+            <div className="grid grid-cols-1 gap-6 p-5 md:grid-cols-[1fr_220px]">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pw-current" className="text-xs text-muted-foreground">Current password</Label>
+                  <PasswordField
+                    id="pw-current"
+                    value={passwordForm.current_password}
+                    placeholder="Enter your current password"
+                    onChange={(v) => setPasswordForm({ ...passwordForm, current_password: v })}
+                  />
+                </div>
+
+                <div className="h-px bg-border" />
+
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pw-new" className="text-xs text-muted-foreground">New password</Label>
+                  <PasswordField
+                    id="pw-new"
+                    value={passwordForm.new_password}
+                    placeholder="Create a new password"
+                    onChange={(v) => setPasswordForm({ ...passwordForm, new_password: v })}
+                  />
+                  <PasswordStrength value={passwordForm.new_password} />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="pw-confirm" className="text-xs text-muted-foreground">Confirm new password</Label>
+                  <PasswordField
+                    id="pw-confirm"
+                    value={passwordForm.confirm_password}
+                    placeholder="Type it again"
+                    onChange={(v) => setPasswordForm({ ...passwordForm, confirm_password: v })}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-md border border-border bg-neutral-50 p-4 md:self-start">
+                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Password requirements
                 </p>
-              )}
-
-              <div className="flex flex-col gap-1">
-                <Label>Current Password</Label>
-                <Input
-                  type="password"
-                  value={passwordForm.current_password}
-                  onChange={(e) =>
-                    setPasswordForm({ ...passwordForm, current_password: e.target.value })
-                  }
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <Label>New Password</Label>
-                <Input
-                  type="password"
+                <PasswordChecklist
                   value={passwordForm.new_password}
-                  onChange={(e) =>
-                    setPasswordForm({ ...passwordForm, new_password: e.target.value })
-                  }
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  confirm={passwordForm.confirm_password}
                 />
               </div>
+            </div>
 
-              <div className="flex flex-col gap-1">
-                <Label>Confirm New Password</Label>
-                <Input
-                  type="password"
-                  value={passwordForm.confirm_password}
-                  onChange={(e) =>
-                    setPasswordForm({ ...passwordForm, confirm_password: e.target.value })
-                  }
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                />
-              </div>
-            </CardContent>
-
-            <CardFooter>
+            <div className="flex justify-end border-t border-border bg-neutral-50 px-5 py-3">
               <Button
                 onClick={handleUpdatePassword}
-                disabled={savingPassword}
-                className="w-full lg:w-auto bg-brand rounded-sm py-5 text-white font-medium"
+                disabled={
+                  savingPassword ||
+                  !passwordForm.current_password ||
+                  passwordForm.new_password.length < 8 ||
+                  passwordForm.new_password !== passwordForm.confirm_password
+                }
               >
-                {savingPassword ? "Saving..." : "Update Password"}
+                {savingPassword ? "Saving..." : "Update password"}
               </Button>
-            </CardFooter>
+            </div>
           </Card>
         </TabsContent>
       </Tabs>

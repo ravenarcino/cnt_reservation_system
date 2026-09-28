@@ -20,7 +20,7 @@ export default function HallAdminLayout({
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
         <AppSidebar role="HALL_ADMIN" />
-        <main className="w-full">
+        <main className="min-w-0 flex-1">
           <AppTopbar />
           <div className="p-6">{children}</div>
         </main>

@@ -91,10 +91,21 @@ export async function PATCH(
     // No vehicle or driver status to touch: availability is worked out from
     // the trip's time window, and CANCELLED / DECLINED trips are ignored by
     // that check - so they free up on their own.
+    // Declining a cancellation request (FOR_REVIEW) rejects the request, not
+    // the trip: it goes back to APPROVED if an admin had approved it (per the
+    // logs), otherwise to PENDING.
+    let newStatus = action;
+    if (action === "DECLINED" && existing.status === "FOR_REVIEW") {
+      const approved = await prisma.logs.count({
+        where: { obReservationId: id, changes: { contains: "APPROVED" } },
+      });
+      newStatus = approved > 0 ? "APPROVED" : "PENDING";
+    }
+
     const reservation = await prisma.obReservation.update({
       where: { ob_id: id },
       data: {
-        status: action,
+        status: newStatus,
         notifyUser: action !== "DONE",
         ...(user.systemRole === "OB_ADMIN" && { readByObAdmin: true }),
         ...(user.systemRole === "SUPER_ADMIN" && { readBySuperAdmin: true }),

@@ -1,5 +1,11 @@
 "use client";
 
+import { FieldLabel, FormSection, SelectCard } from "@/components/booking/form-parts";
+import { ProofDropzone } from "@/components/booking/proof-dropzone";
+import { DetailGrid, DetailHeader, DetailItem, StatusSteps } from "@/components/booking/detail-parts";
+
+import { UserOverview } from "@/components/booking/user-overview";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -374,7 +380,9 @@ export default function ReservationPage() {
   // a reservation can only be cancelled if it hasn't already passed its
   // date_appointment + time_to, and isn't already CANCELLED/DECLINED
   function isReservationCancellable(reservation: HallReservation) {
-    if (reservation.status === "CANCELLED" || reservation.status === "DECLINED")
+    // Only a live booking can be cancelled - not one already finished, ended,
+    // or with a cancellation request waiting for review.
+    if (reservation.status !== "PENDING" && reservation.status !== "APPROVED")
       return false;
 
     const appointmentEnd = new Date(reservation.date_appointment);
@@ -810,11 +818,12 @@ export default function ReservationPage() {
     //   };
     // }
 
-    // DECLINED, CANCELLED, DONE — nothing left to do but view or delete.
+    // FOR_REVIEW (cancellation already requested), DECLINED, CANCELLED,
+    // DONE - nothing left to do but view or delete.
     return {
       view: true,
       edit: false,
-      cancel: true,
+      cancel: false,
       done: false,
       delete: true,
     };
@@ -857,6 +866,8 @@ export default function ReservationPage() {
           </p>
         </div>
       </div>
+
+      <UserOverview />
 
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="inline-flex h-8 w-fit shrink-0 items-center rounded-md border p-0.5">
@@ -924,12 +935,12 @@ export default function ReservationPage() {
       {type === "Hall" && (
         <div className="flex flex-col gap-3">
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {reservationLoading ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10">
+                  <TableCell colSpan={6} className="text-center py-10">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
                       <span>Loading reservations</span>
@@ -941,7 +952,7 @@ export default function ReservationPage() {
               <TableBody>
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={6}
                     className="text-center py-10 text-muted-foreground"
                   >
                     <EmptyState title="No reservation found" description="Try a different search or status filter." />
@@ -952,73 +963,67 @@ export default function ReservationPage() {
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Reservation ID</TableHead>
-                    <TableHead>Purpose</TableHead>
-                    <TableHead>Hall Type</TableHead>
-                    <TableHead>Hall</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Attendees</TableHead>
+                    <TableHead>Reservation</TableHead>
+                    <TableHead>Venue</TableHead>
+                    <TableHead>Schedule</TableHead>
+                    <TableHead className="text-right">Attendees</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {reservations.map((reservation, index) => {
+                  {reservations.map((reservation) => {
                     const actions = getAvailableActions(reservation.status);
 
                     return (
-                      <TableRow key={reservation.reservation_id}>
-                        <TableCell className="font-medium">
-                          {index + 1 + (currentPage - 1) * limit}
+                      <TableRow
+                        key={reservation.reservation_id}
+                        className="cursor-pointer"
+                        onClick={(e) => {
+                          // Row click opens the detail; clicks on the
+                          // action menu are left to the menu.
+                          // Ignore clicks from the action menu: it renders in a portal (outside
+                          // the row in the DOM) but React still bubbles its clicks here -
+                          // including clicks on disabled items.
+                          if (!e.currentTarget.contains(e.target as Node)) return;
+                          if ((e.target as HTMLElement).closest("button")) return;
+                          setSelectedReservation(reservation);
+                          setOpenReservation(true);
+                        }}
+                      >
+                        <TableCell className="max-w-[260px]">
+                          <p className="truncate font-medium">{reservation.purpose}</p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            {reservation.reservation_id}
+                          </p>
                         </TableCell>
 
-                        <TableCell className="font-medium">
-                          {reservation.reservation_id}
-                        </TableCell>
-
-                        <TableCell className="max-w-[20px] truncate">
-                          {reservation.purpose}
+                        <TableCell className="max-w-[220px]">
+                          <p className="truncate">
+                            {reservation.hall.map((h) => h.hall_name).join(", ") || "—"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {hallTypeData?.data?.find(
+                              (t: { type_id: string; type: string }) =>
+                                t.type_id === reservation.hall_type,
+                            )?.type ?? reservation.hall_type}
+                          </p>
                         </TableCell>
 
                         <TableCell>
-                          {hallTypeData?.data?.find(
-                            (t: { type_id: string; type: string }) =>
-                              t.type_id === reservation.hall_type,
-                          )?.type ?? reservation.hall_type}
+                          <p className="font-medium">
+                            {format(new Date(reservation.date_appointment), "EEE, MMM d, yyyy")}
+                          </p>
+                          <p className="text-xs tabular-nums text-muted-foreground">
+                            {format(new Date(reservation.time_from), "h:mm a")} –{" "}
+                            {format(new Date(reservation.time_to), "h:mm a")}
+                          </p>
                         </TableCell>
 
-                        <TableCell>
-                          {reservation.hall.map((h) => h.hall_name).join(", ")}
+                        <TableCell className="text-right tabular-nums">
+                          {reservation.attendees_qty}
                         </TableCell>
-
-                        <TableCell>
-                          {new Date(
-                            reservation.date_appointment,
-                          ).toLocaleDateString()}
-                        </TableCell>
-
-                        <TableCell>
-                          {new Date(reservation.time_from).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}{" "}
-                          –{" "}
-                          {new Date(reservation.time_to).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}
-                        </TableCell>
-
-                        <TableCell>{reservation.attendees_qty}</TableCell>
 
                         <TableCell>
                           <StatusBadge status={reservation.status} />
@@ -1189,169 +1194,74 @@ export default function ReservationPage() {
 
       {openReservation && selectedReservation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-full max-w-xl max-h-[85vh] overflow-y-auto relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-3 top-3 h-8 w-8 rounded-full"
-              onClick={() => setOpenReservation(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+          <Card className="relative w-full max-w-2xl max-h-[88vh] gap-0 overflow-y-auto py-0">
+            <DetailHeader
+              kind="Hall reservation"
+              reference={selectedReservation.reservation_id}
+              title={selectedReservation.purpose}
+              status={selectedReservation.status}
+              onClose={() => setOpenReservation(false)}
+            />
 
-            <CardHeader>
-              <CardTitle>Reservation Detail</CardTitle>
-              <CardDescription>
-                Reservation ID: {selectedReservation.reservation_id}
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground">
-                  Reserved By
-                </label>
-                <p className="font-medium">
-                  {selectedReservation.hall_user?.name ?? "—"}
-                </p>
+            <div className="flex flex-col gap-5 p-5">
+              <div className="rounded-md border border-border bg-neutral-50 px-4 py-3">
+                <StatusSteps status={selectedReservation.status} />
               </div>
 
-              <div>
-                <label className="text-xs text-muted-foreground">Purpose</label>
-                <p className="font-medium">{selectedReservation.purpose}</p>
-              </div>
+              <DetailGrid>
+                <DetailItem
+                  label="Date"
+                  value={format(new Date(selectedReservation.date_appointment), "EEEE, MMM d, yyyy")}
+                />
+                <DetailItem
+                  label="Time"
+                  value={`${format(new Date(selectedReservation.time_from), "h:mm a")} – ${format(new Date(selectedReservation.time_to), "h:mm a")}`}
+                />
+                <DetailItem
+                  label="Hall"
+                  value={selectedReservation.hall?.map((h) => h.hall_name).join(", ")}
+                />
+                <DetailItem
+                  label="Hall type"
+                  value={
+                    hallTypeData?.data?.find(
+                      (t: { type_id: string; type: string }) => t.type_id === selectedReservation.hall_type,
+                    )?.type ?? selectedReservation.hall_type
+                  }
+                />
+                <DetailItem label="Attendees" value={String(selectedReservation.attendees_qty)} />
+                <DetailItem label="Reserved by" value={selectedReservation.hall_user?.name} />
+                <DetailItem
+                  wide
+                  label="Equipment"
+                  value={
+                    selectedReservation.equipment?.length
+                      ? selectedReservation.equipment.map((e) => e.item_name).join(", ")
+                      : "None"
+                  }
+                />
+                <DetailItem wide label="Other request" value={selectedReservation.other_request || "None"} />
+              </DetailGrid>
 
-              <div>
-                <label className="text-xs text-muted-foreground">
-                  Hall Type
-                </label>
-                <p className="font-medium">
-                  {hallTypeData?.data?.find(
-                    (t: { type_id: string; type: string }) =>
-                      t.type_id === selectedReservation.hall_type,
-                  )?.type ?? selectedReservation.hall_type}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Hall</label>
-                <p className="font-medium">
-                  {selectedReservation.hall
-                    ?.map((h) => h.hall_name)
-                    .join(", ") ?? "—"}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">
-                  Equipment
-                </label>
-                <p className="font-medium">
-                  {selectedReservation.equipment &&
-                  selectedReservation.equipment.length > 0
-                    ? selectedReservation.equipment
-                        .map((e) => e.item_name)
-                        .join(", ")
-                    : "None"}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">Date</label>
-                  <p className="font-medium">
-                    {new Date(
-                      selectedReservation.date_appointment,
-                    ).toLocaleDateString()}
-                  </p>
+              {cancellationLoading ? (
+                <p className="text-sm text-muted-foreground">Loading cancellation info...</p>
+              ) : cancellationData?.cancellation ? (
+                <div className="rounded-md border border-orange-200 bg-orange-50 p-4 text-sm">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-orange-800">Cancellation request</p>
+                  <p className="mt-1.5">{cancellationData.cancellation.reason}</p>
+                  <a
+                    href={`/api/uploads/cancellations/${cancellationData.cancellation.path.split("/").pop()}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-2 inline-block text-xs font-medium text-brand underline"
+                  >
+                    View proof: {cancellationData.cancellation.file_name}
+                  </a>
                 </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">
-                    Attendees
-                  </label>
-                  <p className="font-medium">
-                    {selectedReservation.attendees_qty}
-                  </p>
-                </div>
-              </div>
+              ) : null}
+            </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground">
-                    Time From
-                  </label>
-                  <p className="font-medium">
-                    {new Date(selectedReservation.time_from).toLocaleTimeString(
-                      [],
-                      {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      },
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground">
-                    Time To
-                  </label>
-                  <p className="font-medium">
-                    {new Date(selectedReservation.time_to).toLocaleTimeString(
-                      [],
-                      {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      },
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">
-                  Other Request
-                </label>
-                <p className="font-medium">
-                  {selectedReservation.other_request || "—"}
-                </p>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Status</label>
-                <p className="font-medium">{selectedReservation.status}</p>
-              </div>
-
-              <div>
-                {cancellationLoading ? (
-                  <p className="text-sm text-muted-foreground">
-                    Loading cancellation info...
-                  </p>
-                ) : cancellationData?.cancellation ? (
-                  <>
-                    <label className="text-xs text-muted-foreground">
-                      Cancellation Reason
-                    </label>
-                    <p className="font-medium">
-                      {cancellationData.cancellation.reason}
-                    </p>
-
-                    <label className="text-xs text-muted-foreground mt-2 block">
-                      Proof
-                    </label>
-
-                    <a
-                      href={`/api/uploads/cancellations/${cancellationData.cancellation.path.split("/").pop()}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 underline text-sm font-medium"
-                    >
-                      {cancellationData.cancellation.file_name}
-                    </a>
-                  </>
-                ) : null}
-              </div>
-            </CardContent>
-
-            <div className="flex flex-col gap-2 p-4 pt-0">
+            <div className="flex flex-col gap-2 border-t border-border p-5">
               {(() => {
                 // Only a PENDING reservation can still be edited - once it is
                 // approved the details are settled, and the table's dropdown
@@ -1363,7 +1273,7 @@ export default function ReservationPage() {
 
                 const doneButton = statusActions.done ? (
                   <Button
-                    className="w-full bg-blue-700 rounded-sm py-5 text-white font-medium"
+                    className="w-full h-10"
                     disabled={
                       markingDone || !isReservationFinished(selectedReservation)
                     }
@@ -1379,7 +1289,7 @@ export default function ReservationPage() {
 
                 const cancelButton = (
                   <Button
-                    className="w-full lg:flex-1 bg-yellow-600 rounded-sm py-5 text-white font-medium"
+                    className="w-full lg:flex-1 h-10 border border-border bg-white text-foreground hover:bg-neutral-50"
                     disabled={!isReservationCancellable(selectedReservation)}
                     onClick={() => {
                       if (!isReservationCancellable(selectedReservation)) {
@@ -1400,13 +1310,13 @@ export default function ReservationPage() {
 
                 const deleteButton = (
                   <Button
-                    className="w-full lg:w-20 bg-red-600 rounded-sm py-5 text-white font-medium"
+                    className="w-full lg:w-10 h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
                     onClick={() => {
                       setSelectedReservation(selectedReservation);
                       setOpenReservationDialog(true);
                     }}
                   >
-                    <Trash className="h-4 w-4 text-white" />
+                    <Trash className="h-4 w-4" />
                     <p className="block lg:hidden">Delete</p>
                   </Button>
                 );
@@ -1418,7 +1328,7 @@ export default function ReservationPage() {
                   return (
                     <div className="flex flex-col lg:flex-row gap-2">
                       <Button
-                        className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                        className="w-full lg:flex-1 h-10"
                         onClick={() =>
                           downloadReceipt({
                             kind: "Hall Reservation",
@@ -1464,7 +1374,7 @@ export default function ReservationPage() {
                     {doneButton}
                     <div className="flex flex-col lg:flex-row gap-2">
                       <Button
-                        className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                        className="w-full lg:flex-1 h-10"
                         disabled={!isReservationEditable(selectedReservation)}
                         onClick={() => {
                           setOpenReservation(false);
@@ -1520,7 +1430,7 @@ export default function ReservationPage() {
         open={openReservationEditForm}
         onOpenChange={setOpenReservationEditForm}
       >
-        <SheetContent side="right" className="overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               Edit Reservation
@@ -1530,214 +1440,158 @@ export default function ReservationPage() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
-              Reservation ID: {selectedReservation?.reservation_id}
-            </label>
+          <div className="flex flex-col gap-5 p-4">
+            <p className="font-mono text-xs text-muted-foreground">{selectedReservation?.reservation_id}</p>
 
-            <div className="flex flex-col gap-1">
-              <label>Purpose</label>
-              <Input
-                value={editReservationForm.purpose}
-                onChange={(e) =>
-                  setEditReservationForm({
-                    ...editReservationForm,
-                    purpose: e.target.value,
-                  })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Hall Type</label>
-              <Select
-                value={editReservationForm.hall_type}
-                onValueChange={(value) =>
-                  setEditReservationForm({
-                    ...editReservationForm,
-                    hall_type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select hall type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>Type</SelectLabel>
-                    {hallTypeData?.data?.map(
-                      (t: { type_id: string; type: string }) => (
-                        <SelectItem key={t.type_id} value={t.type_id}>
-                          {t.type}
-                        </SelectItem>
-                      ),
-                    )}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label>Hall</label>
-              <div className="grid grid-cols-2 gap-3 h-20 overflow-y-auto pr-2">
-                {hallLoading ? (
-                  <p className="text-sm text-muted-foreground col-span-2">
-                    Loading halls...
-                  </p>
-                ) : (
-                  hallData?.data?.map(
-                    (item: { hall_id: string; hall_name: string }) => {
-                      const taken = unavailableHallIds.has(item.hall_id);
-
-                      return (
-                      <div
-                        key={item.hall_id}
-                        className="flex items-center gap-1"
-                      >
-                        <Checkbox
-                          id={`edit-hall-${item.hall_id}`}
-                          disabled={taken}
-                          checked={editReservationForm.hall.includes(
-                            item.hall_id,
-                          )}
-                          onCheckedChange={() => toggleEditHall(item.hall_id)}
-                        />
-                        <label
-                          htmlFor={`edit-hall-${item.hall_id}`}
-                          className={
-                            taken
-                              ? "font-normal text-red-500 cursor-not-allowed"
-                              : "font-normal cursor-pointer"
-                          }
-                        >
-                          {item.hall_name}
-                          {taken && (
-                            <span className="text-xs"> (Not available)</span>
-                          )}
-                        </label>
-                      </div>
-                      );
-                    },
-                  )
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label>Equipment</label>
-              <div className="grid grid-cols-2 gap-3 h-20 overflow-y-auto pr-2">
-                {itemLoading ? (
-                  <p className="text-sm text-muted-foreground col-span-2">
-                    Loading equipment...
-                  </p>
-                ) : (
-                  itemData?.data?.map(
-                    (item: { item_id: string; item_name: string }) => {
-                      const taken = unavailableItemIds.has(item.item_id);
-
-                      return (
-                      <div
-                        key={item.item_id}
-                        className="flex items-center gap-2"
-                      >
-                        <Checkbox
-                          id={`edit-equipment-${item.item_id}`}
-                          disabled={taken}
-                          checked={editReservationForm.equipment.includes(
-                            item.item_id,
-                          )}
-                          onCheckedChange={() =>
-                            toggleEditEquipment(item.item_id)
-                          }
-                        />
-                        <label
-                          htmlFor={`edit-equipment-${item.item_id}`}
-                          className={
-                            taken
-                              ? "font-normal text-red-500 cursor-not-allowed"
-                              : "font-normal cursor-pointer"
-                          }
-                        >
-                          {item.item_name}
-                          {taken && (
-                            <span className="text-xs"> (Borrowed)</span>
-                          )}
-                        </label>
-                      </div>
-                      );
-                    },
-                  )
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Number of Attendees</label>
-              <Input
-                type="number"
-                min={1}
-                value={editReservationForm.attendees_qty}
-                onChange={(e) =>
-                  setEditReservationForm({
-                    ...editReservationForm,
-                    attendees_qty: e.target.value,
-                  })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label>Time From</label>
+            <FormSection step={1} title="Details">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="edit-purpose">Purpose</FieldLabel>
                 <Input
+                  id="edit-purpose"
+                  type="text"
+                  value={editReservationForm.purpose}
+                  onChange={(e) => setEditReservationForm({ ...editReservationForm, purpose: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="edit-attendees">Number of attendees</FieldLabel>
+                <Input
+                  id="edit-attendees"
+                  type="number"
+                  min={1}
+                  value={editReservationForm.attendees_qty}
+                  onChange={(e) => setEditReservationForm({ ...editReservationForm, attendees_qty: e.target.value })}
+                />
+              </div>
+            </FormSection>
+
+            <FormSection
+              step={2}
+              title="Venue"
+              hint={editReservationForm.hall.length ? `${editReservationForm.hall.length} selected` : undefined}
+            >
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Hall type</FieldLabel>
+                <Select
+                  value={editReservationForm.hall_type}
+                  onValueChange={(value) =>
+                    setEditReservationForm({
+                      ...editReservationForm,
+                      hall_type: value,
+                    })
+                  }
+                >
+                  <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
+                    <SelectValue placeholder="Select hall type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Type</SelectLabel>
+                      {hallTypeData?.data?.map(
+                        (t: { type_id: string; type: string }) => (
+                          <SelectItem key={t.type_id} value={t.type_id}>
+                            {t.type}
+                          </SelectItem>
+                        ),
+                      )}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {hallLoading ? (
+                  <p className="col-span-full text-sm text-muted-foreground">Loading halls...</p>
+                ) : (
+                  hallData?.data?.map((item: { hall_id: string; hall_name: string; floor?: string }) => {
+                    const taken = unavailableHallIds.has(item.hall_id);
+                    const selected = editReservationForm.hall.includes(item.hall_id);
+                    return (
+                      <SelectCard
+                        key={item.hall_id}
+                        selected={selected}
+                        disabled={taken && !selected}
+                        onToggle={() => toggleEditHall(item.hall_id)}
+                        title={item.hall_name}
+                        subtitle={item.floor ? `Floor ${item.floor}` : undefined}
+                        badge={taken ? "Taken" : undefined}
+                      />
+                    );
+                  })
+                )}
+              </div>
+            </FormSection>
+
+            <FormSection
+              step={3}
+              title="Schedule"
+              hint={selectedReservation ? format(new Date(selectedReservation.date_appointment), "EEE, MMM d") : undefined}
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="edit-from">From</FieldLabel>
+                <Input
+                  id="edit-from"
                   type="time"
                   value={editReservationForm.time_from}
-                  onChange={(e) =>
-                    setEditReservationForm({
-                      ...editReservationForm,
-                      time_from: e.target.value,
-                    })
-                  }
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  onChange={(e) => setEditReservationForm({ ...editReservationForm, time_from: e.target.value })}
                 />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label>Time To</label>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="edit-to">To</FieldLabel>
                 <Input
+                  id="edit-to"
                   type="time"
                   value={editReservationForm.time_to}
+                  onChange={(e) => setEditReservationForm({ ...editReservationForm, time_to: e.target.value })}
+                />
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection
+              step={4}
+              title="Extras"
+              hint={editReservationForm.equipment.length ? `${editReservationForm.equipment.length} item(s)` : "Optional"}
+            >
+              <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+                {itemLoading ? (
+                  <p className="col-span-full text-sm text-muted-foreground">Loading equipment...</p>
+                ) : (
+                  itemData?.data?.map((item: { item_id: string; item_name: string; item_brand?: string | null }) => {
+                    const taken = unavailableItemIds.has(item.item_id);
+                    const selected = editReservationForm.equipment.includes(item.item_id);
+                    return (
+                      <SelectCard
+                        key={item.item_id}
+                        selected={selected}
+                        disabled={taken && !selected}
+                        onToggle={() => toggleEditEquipment(item.item_id)}
+                        title={item.item_name}
+                        subtitle={item.item_brand ?? undefined}
+                        badge={taken ? "Borrowed" : undefined}
+                      />
+                    );
+                  })
+                )}
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="edit-other">Other request</FieldLabel>
+                <Textarea
+                  id="edit-other"
+                  className="resize-none"
+                  value={editReservationForm.other_request}
                   onChange={(e) =>
-                    setEditReservationForm({
-                      ...editReservationForm,
-                      time_to: e.target.value,
-                    })
+                    setEditReservationForm({ ...editReservationForm, other_request: e.target.value })
                   }
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                 />
               </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Other Request</label>
-              <Textarea
-                value={editReservationForm.other_request}
-                onChange={(e) =>
-                  setEditReservationForm({
-                    ...editReservationForm,
-                    other_request: e.target.value,
-                  })
-                }
-                className="resize-none rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleUpdateReservation}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Reservation
             </Button>
@@ -1745,7 +1599,7 @@ export default function ReservationPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1798,46 +1652,33 @@ export default function ReservationPage() {
             <DialogTitle className="font-bold">
               Cancel this reservation?
             </DialogTitle>
-            <DialogDescription className="text-gray-600">
-              This will cancel your reservation
+            <DialogDescription>
               {selectedReservation
-                ? ` for ${new Date(selectedReservation.date_appointment).toLocaleDateString()}`
+                ? `${selectedReservation.purpose} · ${format(new Date(selectedReservation.date_appointment), "EEE, MMM d, yyyy")}`
                 : ""}
-              . Please provide a reason and supporting proof. This action cannot
-              be undone.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-4 py-2">
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium">
-                Reason for Cancellation
-              </label>
+          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            Your request goes to the admin for review. The booking stays active
+            until it is approved.
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel htmlFor="cancel-reason">Reason</FieldLabel>
               <Textarea
+                id="cancel-reason"
                 value={cancelReason}
                 onChange={(e) => setCancelReason(e.target.value)}
                 placeholder="Explain why this reservation is being cancelled"
-                className="resize-none rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className="min-h-24 resize-none"
               />
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="text-sm font-medium">
-                Proof (image or document)
-              </label>
-              <Input
-                type="file"
-                accept="image/*,.pdf"
-                onChange={(e) =>
-                  setCancelProofFile(e.target.files?.[0] ?? null)
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-              {cancelProofFile && (
-                <p className="text-xs text-muted-foreground">
-                  Selected: {cancelProofFile.name}
-                </p>
-              )}
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel>Proof</FieldLabel>
+              <ProofDropzone file={cancelProofFile} onChange={setCancelProofFile} />
             </div>
           </div>
 
@@ -1854,7 +1695,7 @@ export default function ReservationPage() {
               disabled={cancelling}
               className="bg-red-600 hover:bg-red-700 text-white"
             >
-              {cancelling ? "Cancelling..." : "Cancel Reservation"}
+              {cancelling ? "Sending..." : "Request cancellation"}
             </Button>
           </DialogFooter>
         </DialogContent>

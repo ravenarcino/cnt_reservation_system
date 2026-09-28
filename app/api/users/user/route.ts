@@ -48,7 +48,8 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         success: true,
-        data: user,
+        // Drop secrets from the created record before returning it.
+        data: { ...user, password: undefined, resetToken: undefined, resetTokenExpiry: undefined },
         logs,
       },
       { status: 200 },
@@ -107,8 +108,21 @@ export async function GET(req: Request) {
 
   const user = await prisma.users.findMany({
     where,
+    // Never send password hashes or reset tokens to the browser.
+    select: {
+      id: true,
+      user_id: true,
+      name: true,
+      email: true,
+      department: true,
+      role: true,
+      systemRole: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+    },
     skip: (page - 1) * limit,
-    take: limit,
+    take: Math.min(limit, 1000),
     orderBy: {
       createdAt: "desc",
     },

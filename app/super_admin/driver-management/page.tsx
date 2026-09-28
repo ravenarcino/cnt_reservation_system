@@ -1,5 +1,9 @@
 "use client";
 
+import { FilterStrip, PageHeader, Segmented, TodayPill } from "@/components/management/parts";
+import { FormSection, FieldLabel } from "@/components/booking/form-parts";
+import { Person } from "@/components/dashboard/admin-tables";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useState } from "react";
@@ -142,6 +146,73 @@ export default function DriverPage() {
   }
   const totalPages = Math.ceil((data?.total ?? 0) / limit) || 1;
 
+  // Every driver (unfiltered) for the "today" strip.
+  const { data: allDriverData } = useQuery({
+    queryKey: ["driver", "summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/drivers/driver?limit=500");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json as { data: Driver[]; total: number };
+    },
+  });
+  const allDrivers: Driver[] = allDriverData?.data ?? [];
+
+  // Approved day offs, to show who is off today.
+  const { data: dayOffData } = useQuery({
+    queryKey: ["dayoff", "APPROVED"],
+    queryFn: async () => {
+      const res = await fetch("/api/dayoff?status=APPROVED");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json as { data: { driverId: string; date_from: string; date_to: string }[] };
+    },
+  });
+  const offToday = new Set(
+    (dayOffData?.data ?? [])
+      .filter((d) => {
+        const start = new Date();
+        start.setHours(0, 0, 0, 0);
+        const end = new Date();
+        end.setHours(23, 59, 59, 999);
+        return new Date(d.date_from) <= end && new Date(d.date_to) >= start;
+      })
+      .map((d) => d.driverId),
+  );
+
+  // One bucket per driver for the strip. Order matters: leave and day off
+  // win over the trip schedule.
+  function bucket(driver: Driver) {
+    if (driver.status === "ON_LEAVE") return "ON_LEAVE";
+    if (offToday.has(driver.driver_id)) return "DAY_OFF";
+    const t = driverToday(driver).label;
+    if (t.startsWith("On trip")) return "ON_TRIP";
+    if (t.startsWith("Booked")) return "BOOKED";
+    return "FREE";
+  }
+  function todayOf(driver: Driver) {
+    if (driver.status !== "ON_LEAVE" && offToday.has(driver.driver_id)) {
+      return { label: "Day off", tone: "text-red-600" };
+    }
+    return driverToday(driver);
+  }
+
+  // A strip bucket filters on the client (the API only knows the manual
+  // status); the table then shows every match without paging.
+  const [today, setToday] = useState("all");
+  const q = search.trim().toLowerCase();
+  const rows: Driver[] =
+    today === "all"
+      ? drivers
+      : allDrivers.filter(
+          (d) =>
+            bucket(d) === today &&
+            (!q ||
+              d.driver_name.toLowerCase().includes(q) ||
+              d.driver_id.toLowerCase().includes(q) ||
+              (d.contact_number ?? "").toLowerCase().includes(q)),
+        );
+
   function openCreate() {
     setEditing(null);
     setForm(emptyForm);
@@ -227,24 +298,34 @@ export default function DriverPage() {
 
   return (
     <div className="h-full flex flex-col gap-5">
-      <div className="flex flex-col lg:flex-row items-center justify-between gap-3">
-        <div>
-          <h1 className="page-title">Driver Management</h1>
-          <p className="text-sm text-muted-foreground">
-            Manage company drivers for OB trips
-          </p>
-        </div>
-        <Button className="bg-brand text-white" onClick={openCreate}>
-          Add Driver
-        </Button>
-      </div>
+      <PageHeader title="Drivers" count={allDriverData?.total ?? data?.total} subtitle="Company drivers for OB trips">
+        <Button onClick={openCreate}>+ Add driver</Button>
+      </PageHeader>
 
-      <div className="flex flex-col lg:flex-row gap-3">
+      <FilterStrip
+        title="Drivers today"
+        total={allDrivers.length}
+        active={today}
+        onSelect={(key) => {
+          setToday(key);
+          setStatus("all");
+          setPage(1);
+        }}
+        items={[
+          { key: "FREE", label: "Free now", color: "#10b981", count: allDrivers.filter((d) => bucket(d) === "FREE").length },
+          { key: "BOOKED", label: "Booked later today", color: "#f59e0b", count: allDrivers.filter((d) => bucket(d) === "BOOKED").length },
+          { key: "ON_TRIP", label: "On a trip", color: "#ef4444", count: allDrivers.filter((d) => bucket(d) === "ON_TRIP").length },
+          { key: "DAY_OFF", label: "Day off", color: "#8b5cf6", count: allDrivers.filter((d) => bucket(d) === "DAY_OFF").length },
+          { key: "ON_LEAVE", label: "On leave", color: "#a3a3a3", count: allDrivers.filter((d) => bucket(d) === "ON_LEAVE").length },
+        ]}
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search driver"
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
+            placeholder="Search by name, ID or contact"
+            className="pl-9"
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
@@ -257,68 +338,88 @@ export default function DriverPage() {
           value={status}
           onValueChange={(value) => {
             setStatus(value);
+            setToday("all");
             setPage(1);
           }}
         >
-          <SelectTrigger className="w-full lg:max-w-48">
+          <SelectTrigger className="w-full lg:max-w-44">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent position="popper" sideOffset={4}>
             <SelectGroup>
               <SelectLabel>Status</SelectLabel>
-              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="AVAILABLE">Available</SelectItem>
-              <SelectItem value="ON_LEAVE">On Leave</SelectItem>
+              <SelectItem value="ON_LEAVE">On leave</SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>No.</TableHead>
-                <TableHead>Driver ID</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Contact Number</TableHead>
-                <TableHead>Today&apos;s Status</TableHead>
-                <TableHead>Action</TableHead>
+                <TableHead>Driver</TableHead>
+                <TableHead>Contact</TableHead>
+                <TableHead>Login account</TableHead>
+                <TableHead>Today</TableHead>
+                <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-10">
+                  <TableCell colSpan={5} className="py-10 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
                       <span>Loading drivers</span>
                     </div>
                   </TableCell>
                 </TableRow>
-              ) : drivers.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell
-                    colSpan={6}
-                    className="text-center py-10 text-muted-foreground"
-                  >
-                    <EmptyState title="No drivers found" description="Add a driver to get started." />
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                    <EmptyState
+                      title="No drivers found"
+                      description="Try another filter, or add a driver."
+                      action={<Button size="sm" onClick={openCreate}>+ Add driver</Button>}
+                    />
                   </TableCell>
                 </TableRow>
               ) : (
-                drivers.map((driver, index) => (
-                  <TableRow key={driver.driver_id}>
-                    <TableCell className="font-medium">
-                      {index + 1 + (page - 1) * limit}
-                    </TableCell>
-                    <TableCell className="font-medium">{driver.driver_id}</TableCell>
-                    <TableCell>{driver.driver_name}</TableCell>
-                    <TableCell>{driver.contact_number ?? "—"}</TableCell>
+                rows.map((driver) => (
+                  <TableRow
+                    key={driver.driver_id}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      // The action menu renders in a portal; ignore its clicks.
+                      if (!e.currentTarget.contains(e.target as Node)) return;
+                      if ((e.target as HTMLElement).closest("button")) return;
+                      openEdit(driver);
+                    }}
+                  >
                     <TableCell>
-                      <span className={driverToday(driver).tone}>
-                        {driverToday(driver).label}
-                      </span>
+                      <Person name={driver.driver_name} sub={driver.driver_id} />
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {driver.contact_number || <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {driver.user ? (
+                        <div className="min-w-0">
+                          <p className="truncate text-sm">{driver.user.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{driver.user.email}</p>
+                        </div>
+                      ) : (
+                        <span className="inline-flex rounded border border-dashed border-neutral-300 px-1.5 py-0.5 text-xs text-muted-foreground">
+                          Not linked
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <TodayPill {...todayOf(driver)} />
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -327,12 +428,10 @@ export default function DriverPage() {
                             <Ellipsis />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent>
+                        <DropdownMenuContent align="end">
                           <DropdownMenuGroup>
-                            <DropdownMenuItem onClick={() => openEdit(driver)}>
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => setToDelete(driver)}>
+                            <DropdownMenuItem onClick={() => openEdit(driver)}>Edit</DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onClick={() => setToDelete(driver)}>
                               Delete
                             </DropdownMenuItem>
                           </DropdownMenuGroup>
@@ -346,7 +445,7 @@ export default function DriverPage() {
           </Table>
         </div>
 
-        <Pagination className="mt-4 justify-center lg:justify-end">
+        <Pagination className={today === "all" ? "mt-4 justify-center lg:justify-end" : "hidden"}>
           <PaginationContent>
             <PaginationItem>
               <PaginationPrevious
@@ -378,51 +477,44 @@ export default function DriverPage() {
 
       {/* Create / edit */}
       <Sheet open={openForm} onOpenChange={setOpenForm}>
-        <SheetContent side="right" className="overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              {editing ? "Edit Driver" : "New Driver"}
+              {editing ? "Edit driver" : "New driver"}
             </SheetTitle>
             <SheetDescription className="text-white">
               {editing ? `Driver ID: ${editing.driver_id}` : "Fill in driver details below."}
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <div className="flex flex-col gap-1">
-              <label>Name</label>
-              <Input
-                placeholder="e.g. Juan Dela Cruz"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={form.driver_name}
-                onChange={(e) => setForm({ ...form, driver_name: e.target.value })}
-              />
-            </div>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Driver details" hint="Shown to admins when assigning trips.">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Full name</FieldLabel>
+                <Input
+                  placeholder="e.g. Juan Dela Cruz"
+                  value={form.driver_name}
+                  onChange={(e) => setForm({ ...form, driver_name: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Contact number</FieldLabel>
+                <Input
+                  placeholder="e.g. 0917 123 4567"
+                  value={form.contact_number}
+                  onChange={(e) => setForm({ ...form, contact_number: e.target.value })}
+                />
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col gap-1">
-              <label>Contact Number</label>
-              <Input
-                placeholder="e.g. 0917 123 4567"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={form.contact_number}
-                onChange={(e) =>
-                  setForm({ ...form, contact_number: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Login Account</label>
-              <Select
-                value={form.userId}
-                onValueChange={(value) => setForm({ ...form, userId: value })}
-              >
-                <SelectTrigger className="w-full rounded-sm">
+            <FormSection step={2} title="Login account" hint="Lets the driver sign in to see trips and file day offs.">
+              <Select value={form.userId} onValueChange={(value) => setForm({ ...form, userId: value })}>
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Login account" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="none">No account</SelectItem>
                     {(accountData?.data ?? [])
                       // Hide accounts already linked to a different driver.
                       .filter((a) => !a.linkedTo || a.linkedTo === editing?.driver_id)
@@ -435,40 +527,32 @@ export default function DriverPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                Users with the Driver system role. Lets the driver sign in to see
-                trips and file day offs.
+                Only users with the Driver role appear here. Add one in Employees first.
               </p>
-            </div>
+            </FormSection>
 
-            <div className="flex flex-col gap-1">
-              <label>Status</label>
-              <Select
-                value={form.status}
-                onValueChange={(value) => setForm({ ...form, status: value })}
-              >
-                <SelectTrigger className="w-full rounded-sm">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="AVAILABLE">Available</SelectItem>
-                    <SelectItem value="ON_LEAVE">On Leave</SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection step={3} title="Status" hint="On leave marks the driver unavailable for trips.">
+              <Segmented
+                value={form.status as "AVAILABLE" | "ON_LEAVE"}
+                onChange={(v) => setForm({ ...form, status: v })}
+                options={[
+                  { value: "AVAILABLE", label: "Available" },
+                  { value: "ON_LEAVE", label: "On leave" },
+                ]}
+              />
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleSave}
               disabled={saving}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              {editing ? "Update Driver" : "Create Driver"}
+              {editing ? "Save changes" : "Add driver"}
             </Button>
             <SheetClose asChild>
-              <Button variant="outline" className="w-full rounded-sm py-5 font-medium">
+              <Button variant="outline" className="w-full h-10">
                 Cancel
               </Button>
             </SheetClose>

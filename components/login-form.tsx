@@ -70,7 +70,7 @@ export function LoginForm({
       if (user.systemRole === "SUPER_ADMIN") {
         router.push("/super_admin/user-management");
       } else if (user.systemRole === "IT_ADMIN") {
-        router.push("/it_admin/dashboard");
+        router.push("/super_admin/dashboard");
       } else if (user.systemRole === "HALL_ADMIN") {
         router.push("/hall_admin/dashboard");
       } else if (user.systemRole === "OB_ADMIN") {

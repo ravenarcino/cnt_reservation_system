@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { NextResponse } from "next/server";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 // POST /api/public/status  { reference, email }
 // Public reservation status lookup for the landing page. Both the reference
@@ -8,6 +9,15 @@ import { NextResponse } from "next/server";
 // endpoint cannot be used to probe whose reservation is whose. Only a few
 // non-sensitive fields are returned.
 export async function POST(req: Request) {
+  // 10 lookups per minute per IP, so reference numbers can't be guessed in bulk.
+  const limit = rateLimit(`status:${clientIp(req)}`, 10, 60_000);
+  if (!limit.ok) {
+    return NextResponse.json(
+      { success: false, error: `Too many tries. Please wait ${limit.retryAfter}s and try again.` },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfter) } },
+    );
+  }
+
   const body = await req.json().catch(() => ({}));
   const reference = String(body.reference ?? "").trim();
   const email = String(body.email ?? "").trim().toLowerCase();

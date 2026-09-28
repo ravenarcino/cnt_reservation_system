@@ -169,3 +169,115 @@
   letter-spacing: -0.01em;
   color: var(--foreground);
 }
+
+/* ------------------------------------------------------------------
+   react-big-calendar: match the app's flat look (toolbar buttons like our
+   outline buttons, active view in brand red, light grid, today tinted).
+   ------------------------------------------------------------------ */
+.rbc-toolbar {
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.rbc-toolbar .rbc-toolbar-label {
+  font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 1rem;
+  order: -1;
+  flex-basis: 100%;
+  text-align: left;
+  padding: 0;
+}
+.rbc-toolbar .rbc-btn-group {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  overflow: hidden;
+  background: #fff;
+}
+.rbc-toolbar button {
+  border: 0;
+  border-radius: 0 !important;
+  padding: 0.375rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+  background: transparent;
+  line-height: 1.25rem;
+  box-shadow: none !important;
+}
+.rbc-toolbar .rbc-btn-group > button + button {
+  border-left: 1px solid var(--border);
+}
+.rbc-toolbar button:hover,
+.rbc-toolbar button:focus {
+  background: #f5f5f5;
+  color: var(--foreground);
+}
+.rbc-toolbar button.rbc-active,
+.rbc-toolbar button.rbc-active:hover,
+.rbc-toolbar button.rbc-active:focus {
+  background: var(--color-brand-soft);
+  color: var(--color-brand);
+  font-weight: 600;
+}
+.rbc-month-view,
+.rbc-time-view,
+.rbc-agenda-view table.rbc-agenda-table {
+  border-color: var(--border);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.rbc-header {
+  padding: 0.5rem 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  background: #fafafa;
+  border-color: var(--border) !important;
+}
+.rbc-month-row + .rbc-month-row,
+.rbc-day-bg + .rbc-day-bg,
+.rbc-time-content,
+.rbc-timeslot-group,
+.rbc-time-header-content,
+.rbc-day-slot .rbc-time-slot {
+  border-color: #f0f0f0 !important;
+}
+.rbc-off-range-bg {
+  background: #fafafa;
+}
+.rbc-today {
+  background: var(--color-brand-soft);
+}
+.rbc-date-cell {
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+}
+.rbc-date-cell.rbc-now {
+  font-weight: 700;
+  color: var(--color-brand);
+}
+.rbc-event,
+.rbc-day-slot .rbc-background-event {
+  background: var(--color-brand);
+  border: 0;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+}
+.rbc-current-time-indicator {
+  background-color: var(--color-brand);
+}
+
+/* User dashboard: on large screens fill the viewport below the top bar
+   (3rem) and the layout padding (2 x 1.5rem). Never shorter than 640px, so
+   on very short windows the page scrolls a little instead of squashing the
+   calendar. */
+@media (min-width: 1024px) {
+  .dashboard-fit {
+    height: calc(100dvh - 6rem);
+    min-height: 640px;
+  }
+}

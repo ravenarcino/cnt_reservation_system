@@ -47,6 +47,9 @@ import {
 } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { DateHoverPopup, type DateHoverPopupHandle } from "./date-hover-popup";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FieldLabel, FormSection, SelectCard, Summary } from "@/components/booking/form-parts";
 
 const locales = {
   "en-US": enUS,
@@ -516,13 +519,13 @@ export default function DashboardPage() {
     let base: React.CSSProperties;
     // "Fully booked" is a hall notion - there are no OB bookings to fill a day.
     if (isHallTab && (allHallsMarkedFull || fullyOccupiedDates.has(dateStr))) {
-      base = { backgroundColor: "#fee2e2", color: "#991b1b" }; // light red
+      base = { backgroundColor: "#fef2f2", color: "#b91c1c" }; // light red (fully booked)
     } else if (activeNonWorkingDates.has(dateStr)) {
-      base = { backgroundColor: "#e5e7eb", color: "#6b7280" }; // light grey
+      base = { backgroundColor: "#f5f5f5", color: "#737373" }; // grey (non-working)
     } else if (isPastDate(date)) {
-      base = { backgroundColor: "#f3f4f6", color: "#9ca3af" }; // light grey (past)
+      base = { backgroundColor: "#fafafa", color: "#a3a3a3" }; // faint (past)
     } else {
-      base = { backgroundColor: "#dcfce7", color: "#166534" }; // light green (available)
+      base = { backgroundColor: "#f0fdf4", color: "#166534" }; // light green (available)
     }
 
     // Highlight the currently selected (or default) date with a red border.
@@ -531,7 +534,7 @@ export default function DashboardPage() {
     if (isSelected) {
       base = {
         ...base,
-        boxShadow: "inset 0 0 0 2px #f87171", // light red border, no layout shift
+        boxShadow: "inset 0 0 0 2px #dc2626", // brand red ring, no layout shift
         borderRadius: "8px", // curved corners
       };
     }
@@ -1117,131 +1120,20 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="h-full flex flex-col gap-5">
-      <div>
+    // On large screens the page fills exactly the viewport below the top bar
+    // (48px) and the layout padding (2 x 24px): the calendar and the side
+    // panel stretch to fit, and only the booking list scrolls inside.
+    <div className="dashboard-fit flex flex-col gap-4">
+      <div className="shrink-0">
         <h1 className="page-title">Dashboard</h1>
         <p className="text-sm text-muted-foreground text-wrap">
           Create and view reservations
         </p>
       </div>
 
-      <div className="flex flex-col lg:flex-row w-full gap-2">
-        <div className="flex flex-col gap-2 w-full">
-          <div className="flex flex-row gap-2">
-            <Card className="shadow-sm w-full h-fit">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Tickets Created
-                </CardTitle>
-                <Ticket className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {dashboardStats.totalTickets + obTicketCount}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm w-full h-fit">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Done Reservations
-                </CardTitle>
-                <Ticket className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {dashboardStats.totalDone + obDoneCount}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <div className="flex flex-row gap-2">
-            <Card className="shadow-sm w-full h-fit">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Hall Tickets
-                </CardTitle>
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {dashboardStats.hallTickets}
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm w-full h-fit">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  OB Tickets
-                </CardTitle>
-                <Radio className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {obTicketCount}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2 w-full">
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Today`s Reservation
-              </CardTitle>
-              <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="flex flex-row justify-between">
-              <div className="text-2xl font-bold">
-                {todayItems.length}
-              </div>
-
-              {todayItems.length > 0 && (
-                <div className="h-15 overflow-y-scroll space-y-1 pr-1">
-                  {todayItems.map((item) => (
-                    <p key={item.id} className="text-xs text-muted-foreground">
-                      {item.id} - {item.label}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Upcoming Reservation
-              </CardTitle>
-              <CalendarClock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent className="flex flex-row justify-between">
-              <div className="text-2xl font-bold">
-                {upcomingItems.length}
-              </div>
-
-              {upcomingItems.length > 0 && (
-                <div className="h-15 overflow-y-scroll space-y-1 pr-1">
-                  {upcomingItems.map((item) => (
-                    <p key={item.id} className="text-xs text-muted-foreground">
-                      {item.id} - {item.label}
-                    </p>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-4">
-        <div className="w-full lg:w-2/3 rounded-xl border bg-white p-4 shadow">
-          <div className="mb-3 inline-flex rounded-md border p-1">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+        <div className="flex w-full min-h-0 flex-col rounded-lg border border-border bg-white p-4 lg:w-2/3">
+          <div className="mb-3 inline-flex w-fit shrink-0 rounded-md border p-1">
             {(["HALL", "OB"] as const).map((tab) => (
               <button
                 key={tab}
@@ -1265,12 +1157,13 @@ export default function DashboardPage() {
             obTrips={obOccupancyData?.data ?? []}
           />
 
+          <div className="min-h-[520px] flex-1 lg:min-h-[380px]">
           <Calendar
             localizer={localizer}
             events={calendarTab === "HALL" ? calendarEvents : obCalendarEvents}
             startAccessor="start"
             endAccessor="end"
-            style={{ height: 700 }}
+            style={{ height: "100%" }}
             defaultView="month"
             views={["month", "week", "day", "agenda"]}
             selectable
@@ -1281,16 +1174,18 @@ export default function DashboardPage() {
             eventPropGetter={(event: any) => {
               const status = event.resource?.status;
               const colorMap: Record<string, string> = {
-                APPROVED: "#16a34a",
-                PENDING: "#ca8a04",
-                FOR_APPROVAL: "#ca8a04",
-                FOR_REVIEW: "#ea580c",
-                DECLINED: "#dc2626",
-                CANCELLED: "#6b7280",
+                // Same colours as the status pills.
+                APPROVED: "#10b981",
+                PENDING: "#f59e0b",
+                FOR_APPROVAL: "#f97316",
+                FOR_REVIEW: "#f97316",
+                DECLINED: "#ef4444",
+                CANCELLED: "#a3a3a3",
+                DONE: "#0ea5e9",
               };
               return {
                 style: {
-                  backgroundColor: colorMap[status] ?? "#2563eb",
+                  backgroundColor: colorMap[status] ?? "#0ea5e9",
                   borderRadius: "4px",
                   border: "none",
                 },
@@ -1314,98 +1209,103 @@ export default function DashboardPage() {
               setSelectedDate(normalized);
             }}
           />
+          </div>
+
+          {/* Legend - matches getDayStyle */}
+          <div className="mt-3 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 text-xs text-muted-foreground">
+            {[
+              ["#f0fdf4", "#bbf7d0", "Available"],
+              ...(calendarTab === "HALL" ? [["#fef2f2", "#fecaca", "Fully booked"]] : []),
+              ["#f5f5f5", "#e5e5e5", "Non-working day"],
+              ["#fafafa", "#e5e5e5", "Past"],
+            ].map(([bg, border, label]) => (
+              <span key={label} className="flex items-center gap-1.5">
+                <span className="h-3 w-3 rounded-sm border" style={{ backgroundColor: bg, borderColor: border }} />
+                {label}
+              </span>
+            ))}
+            <span className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded-sm ring-2 ring-inset ring-brand" />
+              Selected
+            </span>
+          </div>
         </div>
 
-        <div className="w-full lg:w-1/3 rounded-xl border bg-white p-4 shadow flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-muted-foreground">
-            {calendarTab === "OB" ? "OB Details" : "Reservation Details"} -{" "}
-            <span className="text-xs text-red-500">
-              {selectedDate
-                ? format(selectedDate, "PPP")
-                : format(new Date(), "PPP")}
-            </span>
-          </h2>
+        <div className="flex w-full min-h-0 flex-col rounded-lg border border-border bg-white lg:w-1/3">
+          {/* Selected date */}
+          <div className="flex shrink-0 items-center gap-4 border-b border-border p-4">
+            <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-md bg-brand-soft text-brand">
+              <span className="text-[10px] font-semibold uppercase">
+                {format(selectedDate ?? new Date(), "MMM")}
+              </span>
+              <span className="text-xl font-bold leading-none tabular-nums">
+                {format(selectedDate ?? new Date(), "d")}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold">{format(selectedDate ?? new Date(), "EEEE")}</p>
+              <p className="text-xs text-muted-foreground">
+                {calendarTab === "OB"
+                  ? `${obTripsForSelectedDate.length} OB trip${obTripsForSelectedDate.length === 1 ? "" : "s"}`
+                  : `${reservationsForSelectedDate.length} reservation${reservationsForSelectedDate.length === 1 ? "" : "s"}`}
+              </p>
+            </div>
+          </div>
 
-          <div className="flex-1 overflow-y-auto space-y-2">
+          {/* Bookings on that date, as a timeline */}
+          <div className="min-h-[200px] flex-1 overflow-y-auto p-4 lg:min-h-0">
             {calendarTab === "OB" ? (
               obTripsForSelectedDate.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No OB trips on this date.
-                </p>
+                <EmptyState title="No OB trips on this date" className="py-6" />
               ) : (
-                obTripsForSelectedDate.map((trip: any) => (
-                  <div
-                    key={trip.ob_id}
-                    className="rounded-lg border p-3 text-sm hover:bg-muted/50 transition-colors"
-                  >
-                    <p className="font-medium">{trip.destination}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {trip.purpose}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Vehicle:{" "}
-                      {trip.vehicle
-                        ?.map((v: { vehicle_name: string }) => v.vehicle_name)
-                        .join(", ") || "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Driver:{" "}
-                      {[
-                        ...(trip.drivers ?? []).map(
-                          (dr: { driver_name: string }) => dr.driver_name,
-                        ),
-                        ...(trip.driver_name ? [`${trip.driver_name} (personal)`] : []),
-                      ].join(", ") || "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(trip.time_from), "MMM d, h:mm a")} –{" "}
-                      {format(new Date(trip.time_to), "MMM d, h:mm a")}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Status: {trip.status}
-                    </p>
-                  </div>
-                ))
+                <ol className="relative flex flex-col gap-4 border-l border-border pl-4">
+                  {obTripsForSelectedDate.map((trip: any) => (
+                    <li key={trip.ob_id} className="relative">
+                      <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-brand ring-4 ring-white" />
+                      <p className="text-xs font-medium tabular-nums text-muted-foreground">
+                        {format(new Date(trip.time_from), "MMM d, h:mm a")} – {format(new Date(trip.time_to), "MMM d, h:mm a")}
+                      </p>
+                      <div className="mt-1 flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium">{trip.destination}</p>
+                        <StatusBadge status={trip.status} />
+                      </div>
+                      <p className="text-xs text-muted-foreground">{trip.purpose}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {trip.vehicle?.map((v: { vehicle_name: string }) => v.vehicle_name).join(", ") || "—"} ·{" "}
+                        {[
+                          ...(trip.drivers ?? []).map((dr: { driver_name: string }) => dr.driver_name),
+                          ...(trip.driver_name ? [`${trip.driver_name} (personal)`] : []),
+                        ].join(", ") || "No driver"}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
               )
             ) : reservationsForSelectedDate.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No reservations for this date.
-              </p>
+              <EmptyState title="No reservations on this date" className="py-6" />
             ) : (
-              reservationsForSelectedDate.map((res: any) => (
-                <div
-                  key={res.reservation_id}
-                  className="rounded-lg border p-3 text-sm hover:bg-muted/50 transition-colors"
-                >
-                  <p className="font-medium">{res.purpose}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Reserved by: {res.hall_user?.name ?? "Unknown"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Hall:{" "}
-                    {res.hall
-                      ?.map((h: { hall_name: string }) => h.hall_name)
-                      .join(", ") ?? "—"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(res.time_from).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
-                    –{" "}
-                    {new Date(res.time_to).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Status: {res.status}
-                  </p>
-                </div>
-              ))
+              <ol className="relative flex flex-col gap-4 border-l border-border pl-4">
+                {reservationsForSelectedDate.map((res: any) => (
+                  <li key={res.reservation_id} className="relative">
+                    <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-brand ring-4 ring-white" />
+                    <p className="text-xs font-medium tabular-nums text-muted-foreground">
+                      {format(new Date(res.time_from), "h:mm a")} – {format(new Date(res.time_to), "h:mm a")}
+                    </p>
+                    <div className="mt-1 flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium">{res.purpose}</p>
+                      <StatusBadge status={res.status} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {res.hall?.map((h: { hall_name: string }) => h.hall_name).join(", ") ?? "—"} ·{" "}
+                      {res.hall_user?.name ?? "Unknown"}
+                    </p>
+                  </li>
+                ))}
+              </ol>
             )}
           </div>
-          <div className="w-full h-fit">
+
+          <div className="w-full h-fit shrink-0 border-t border-border p-4">
             {calendarTab === "OB" ? (
               <Button
                 className="w-full py-5"
@@ -1442,7 +1342,7 @@ export default function DashboardPage() {
       </div>
 
       <Sheet open={openReservationForm} onOpenChange={setOpenReservationForm}>
-        <SheetContent side="right" className="overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
               New Hall Reservation
@@ -1452,211 +1352,180 @@ export default function DashboardPage() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <p className="font-bold">
-              Date Selected:{" "}
-              {selectedDate
-                ? format(selectedDate, "PPP")
-                : format(new Date(), "PPP")}
-            </p>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Details">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="hall-purpose">Purpose</FieldLabel>
+                <Input
+                  id="hall-purpose"
+                  placeholder="e.g. Quarterly Town Hall"
+                  value={reservationForm.purpose}
+                  onChange={(e) =>
+                    setReservationForm({ ...reservationForm, purpose: e.target.value })
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="hall-attendees">Number of attendees</FieldLabel>
+                <Input
+                  id="hall-attendees"
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 50"
+                  value={reservationForm.attendees_qty}
+                  onChange={(e) =>
+                    setReservationForm({ ...reservationForm, attendees_qty: e.target.value })
+                  }
+                />
+              </div>
+            </FormSection>
 
-            {/* Purpose */}
-            <div className="flex flex-col gap-1">
-              <label>Purpose</label>
-              <Input
-                placeholder="e.g. Quarterly Town Hall"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={reservationForm.purpose}
-                onChange={(e) =>
-                  setReservationForm({
-                    ...reservationForm,
-                    purpose: e.target.value,
-                  })
-                }
-              />
-            </div>
+            <FormSection
+              step={2}
+              title="Venue"
+              hint={reservationForm.hall.length ? `${reservationForm.hall.length} selected` : undefined}
+            >
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Hall type</FieldLabel>
+                <Select
+                  value={reservationForm.hall_type}
+                  onValueChange={(value) =>
+                    setReservationForm({ ...reservationForm, hall_type: value })
+                  }
+                >
+                  <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
+                    <SelectValue
+                      placeholder={
+                        hallTypeLoading ? "Loading..." : "Select hall type"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectLabel>Type</SelectLabel>
+                      {hallTypeLoading ? (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          Loading hall types...
+                        </div>
+                      ) : hallTypeData?.data?.length === 0 ? (
+                        <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                          No hall types found
+                        </div>
+                      ) : (
+                        hallTypeData?.data?.map(
+                          (type: { type_id: string; type: string }) => (
+                            <SelectItem key={type.type_id} value={type.type_id}>
+                              {type.type}
+                            </SelectItem>
+                          ),
+                        )
+                      )}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {hallLoading ? (
+                  <p className="col-span-full text-sm text-muted-foreground">Loading halls...</p>
+                ) : selectableHalls.length === 0 ? (
+                  <p className="col-span-full rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                    {reservationForm.hall_type ? "No halls available for this date" : "Pick a hall type first"}
+                  </p>
+                ) : (
+                  selectableHalls.map((item: { hall_id: string; hall_name: string; floor?: string }) => (
+                    <SelectCard
+                      key={item.hall_id}
+                      selected={reservationForm.hall.includes(item.hall_id)}
+                      onToggle={() => toggleHall(item.hall_id)}
+                      title={item.hall_name}
+                      subtitle={item.floor ? `Floor ${item.floor}` : undefined}
+                    />
+                  ))
+                )}
+              </div>
+            </FormSection>
 
-            {/* Hall Type */}
-            <div className="flex flex-col gap-1">
-              <label>Hall Type</label>
-              <Select
-                value={reservationForm.hall_type}
-                onValueChange={(value) =>
-                  setReservationForm({ ...reservationForm, hall_type: value })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue
-                    placeholder={
-                      hallTypeLoading ? "Loading..." : "Select hall type"
+            <FormSection step={3} title="Schedule" hint={format(selectedDate ?? new Date(), "EEE, MMM d")}>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor="hall-from">From</FieldLabel>
+                  <Input
+                    id="hall-from"
+                    type="time"
+                    value={reservationForm.time_from}
+                    onChange={(e) =>
+                      setReservationForm({ ...reservationForm, time_from: e.target.value })
                     }
                   />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectLabel>Type</SelectLabel>
-                    {hallTypeLoading ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        Loading hall types...
-                      </div>
-                    ) : hallTypeData?.data?.length === 0 ? (
-                      <div className="px-2 py-1.5 text-sm text-muted-foreground">
-                        No hall types found
-                      </div>
-                    ) : (
-                      hallTypeData?.data?.map(
-                        (type: { type_id: string; type: string }) => (
-                          <SelectItem key={type.type_id} value={type.type_id}>
-                            {type.type}
-                          </SelectItem>
-                        ),
-                      )
-                    )}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Hall checklist */}
-            <div className="flex flex-col gap-2">
-              <label>Hall</label>
-              <div className="grid grid-cols-2 gap-3 h-20 overflow-y-auto pr-2">
-                {hallLoading ? (
-                  <p className="text-sm text-muted-foreground col-span-2">
-                    Loading halls...
-                  </p>
-                ) : selectableHalls.length === 0 ? (
-                  <p className="text-sm text-muted-foreground col-span-2">
-                    No halls available for this date
-                  </p>
-                ) : (
-                  selectableHalls.map(
-                    (item: { hall_id: string; hall_name: string }) => (
-                      <div
-                        key={item.hall_id}
-                        className="flex items-center gap-1"
-                      >
-                        <Checkbox
-                          id={`hall-${item.hall_id}`}
-                          checked={reservationForm.hall.includes(item.hall_id)}
-                          onCheckedChange={() => toggleHall(item.hall_id)}
-                        />
-                        <label
-                          htmlFor={`hall-${item.hall_id}`}
-                          className="font-normal cursor-pointer"
-                        >
-                          {item.hall_name}
-                        </label>
-                      </div>
-                    ),
-                  )
-                )}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel htmlFor="hall-to">To</FieldLabel>
+                  <Input
+                    id="hall-to"
+                    type="time"
+                    value={reservationForm.time_to}
+                    onChange={(e) =>
+                      setReservationForm({ ...reservationForm, time_to: e.target.value })
+                    }
+                  />
+                </div>
               </div>
-            </div>
+            </FormSection>
 
-            {/* Equipment checklist */}
-            <div className="flex flex-col gap-2">
-              <label>Equipment</label>
-              <div className="grid grid-cols-2 gap-3 h-20 overflow-y-auto pr-2">
+            <FormSection
+              step={4}
+              title="Extras"
+              hint={reservationForm.equipment.length ? `${reservationForm.equipment.length} item(s)` : "Optional"}
+            >
+              <div className="grid max-h-56 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                 {selectableItems.length === 0 ? (
-                  <p className="text-sm text-muted-foreground col-span-2">
-                    No equipment available
-                  </p>
+                  <p className="col-span-full text-xs text-muted-foreground">No equipment available</p>
                 ) : (
-                  selectableItems.map(
-                    (item: { item_id: string; item_name: string }) => (
-                    <div key={item.item_id} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`equipment-${item.item_id}`}
-                        checked={reservationForm.equipment.includes(
-                          item.item_id,
-                        )}
-                        onCheckedChange={() => toggleEquipment(item.item_id)}
-                      />
-                      <label
-                        htmlFor={`equipment-${item.item_id}`}
-                        className="font-normal cursor-pointer"
-                      >
-                        {item.item_name}
-                      </label>
-                    </div>
-                    ),
-                  )
+                  selectableItems.map((item: { item_id: string; item_name: string; item_brand?: string | null }) => (
+                    <SelectCard
+                      key={item.item_id}
+                      selected={reservationForm.equipment.includes(item.item_id)}
+                      onToggle={() => toggleEquipment(item.item_id)}
+                      title={item.item_name}
+                      subtitle={item.item_brand ?? undefined}
+                    />
+                  ))
                 )}
               </div>
-            </div>
-
-            {/* Attendees */}
-            <div className="flex flex-col gap-1">
-              <label>Number of Attendees</label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="e.g. 50"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={reservationForm.attendees_qty}
-                onChange={(e) =>
-                  setReservationForm({
-                    ...reservationForm,
-                    attendees_qty: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Time range */}
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label>Time From</label>
-                <Input
-                  type="time"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                  value={reservationForm.time_from}
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="hall-other">Other request</FieldLabel>
+                <Textarea
+                  id="hall-other"
+                  placeholder="Any additional requirements..."
+                  className="resize-none"
+                  value={reservationForm.other_request}
                   onChange={(e) =>
-                    setReservationForm({
-                      ...reservationForm,
-                      time_from: e.target.value,
-                    })
+                    setReservationForm({ ...reservationForm, other_request: e.target.value })
                   }
                 />
               </div>
-              <div className="flex flex-col gap-1">
-                <label>Time To</label>
-                <Input
-                  type="time"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                  value={reservationForm.time_to}
-                  onChange={(e) =>
-                    setReservationForm({
-                      ...reservationForm,
-                      time_to: e.target.value,
-                    })
-                  }
-                />
-              </div>
-            </div>
+            </FormSection>
 
-            {/* Other request */}
-            <div className="flex flex-col gap-1">
-              <label>Other Request</label>
-              <Textarea
-                placeholder="Any additional requirements..."
-                className="resize-none rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={reservationForm.other_request}
-                onChange={(e) =>
-                  setReservationForm({
-                    ...reservationForm,
-                    other_request: e.target.value,
-                  })
-                }
-              />
-            </div>
+            <Summary
+              rows={[
+                ["Date", format(selectedDate ?? new Date(), "EEEE, MMM d, yyyy")],
+                ["Time", reservationForm.time_from && reservationForm.time_to ? `${reservationForm.time_from} – ${reservationForm.time_to}` : ""],
+                [
+                  "Hall",
+                  selectableHalls
+                    .filter((h: { hall_id: string }) => reservationForm.hall.includes(h.hall_id))
+                    .map((h: { hall_name: string }) => h.hall_name)
+                    .join(", "),
+                ],
+                ["Attendees", reservationForm.attendees_qty],
+              ]}
+            />
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleCreateHallReservation}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Create Reservation
             </Button>
@@ -1675,7 +1544,7 @@ export default function DashboardPage() {
 
       {/* ---------------------------- OB trip booking ---------------------------- */}
       <Sheet open={openObForm} onOpenChange={setOpenObForm}>
-        <SheetContent side="right" className="overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">New OB Trip</SheetTitle>
             <SheetDescription className="text-white">
@@ -1683,114 +1552,106 @@ export default function DashboardPage() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <div className="flex flex-col gap-1">
-              <label>Purpose</label>
-              <Input
-                placeholder="e.g. Client meeting"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={obForm.purpose}
-                onChange={(e) =>
-                  setObForm({ ...obForm, purpose: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Destination</label>
-              <Input
-                placeholder="e.g. Makati City"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={obForm.destination}
-                onChange={(e) =>
-                  setObForm({ ...obForm, destination: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Number of Passengers</label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="e.g. 4"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={obForm.passengers_qty}
-                onChange={(e) =>
-                  setObForm({ ...obForm, passengers_qty: e.target.value })
-                }
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label>Departure Date</label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Trip details">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-purpose">Purpose</FieldLabel>
                 <Input
+                  id="ob-purpose"
+                  type="text"
+                  placeholder="e.g. Client meeting"
+                  value={obForm.purpose}
+                  onChange={(e) => setObForm({ ...obForm, purpose: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-destination">Destination</FieldLabel>
+                <Input
+                  id="ob-destination"
+                  type="text"
+                  placeholder="e.g. Makati City"
+                  value={obForm.destination}
+                  onChange={(e) => setObForm({ ...obForm, destination: e.target.value })}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-pax">Number of passengers</FieldLabel>
+                <Input
+                  id="ob-pax"
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 4"
+                  value={obForm.passengers_qty}
+                  onChange={(e) => setObForm({ ...obForm, passengers_qty: e.target.value })}
+                />
+              </div>
+            </FormSection>
+
+            <FormSection step={2} title="Schedule">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-dep-date">Departure date</FieldLabel>
+                <Input
+                  id="ob-dep-date"
                   type="date"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder=""
                   value={obForm.date_departure}
-                  onChange={(e) =>
-                    setObForm({ ...obForm, date_departure: e.target.value })
-                  }
+                  onChange={(e) => setObForm({ ...obForm, date_departure: e.target.value })}
                 />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label>Departure Time</label>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-dep-time">Departure time</FieldLabel>
                 <Input
+                  id="ob-dep-time"
                   type="time"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder=""
                   value={obForm.time_from}
-                  onChange={(e) =>
-                    setObForm({ ...obForm, time_from: e.target.value })
-                  }
+                  onChange={(e) => setObForm({ ...obForm, time_from: e.target.value })}
                 />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex flex-col gap-1">
-                <label>Return Date</label>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-ret-date">Return date</FieldLabel>
                 <Input
+                  id="ob-ret-date"
                   type="date"
                   min={obForm.date_departure || undefined}
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder=""
                   value={obForm.date_return}
-                  onChange={(e) =>
-                    setObForm({ ...obForm, date_return: e.target.value })
-                  }
+                  onChange={(e) => setObForm({ ...obForm, date_return: e.target.value })}
                 />
-              </div>
-              <div className="flex flex-col gap-1">
-                <label>Return Time</label>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-ret-time">Return time</FieldLabel>
                 <Input
+                  id="ob-ret-time"
                   type="time"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  placeholder=""
                   value={obForm.time_to}
-                  onChange={(e) =>
-                    setObForm({ ...obForm, time_to: e.target.value })
-                  }
+                  onChange={(e) => setObForm({ ...obForm, time_to: e.target.value })}
                 />
+                </div>
               </div>
-            </div>
+            </FormSection>
 
-            {/* Vehicles - availability depends on the schedule above */}
-            <div className="flex flex-col gap-2">
-              <label>Vehicles</label>
+            <FormSection
+              step={3}
+              title="Vehicle"
+              hint={
+                obForm.vehicle.length > 0 && selectedObCapacity > 0
+                  ? `${selectedObCapacity} seats selected`
+                  : undefined
+              }
+            >
               {!obWindowComplete ? (
-                <p className="text-sm text-muted-foreground">
-                  Set the departure and return schedule first to see which
-                  vehicles are free.
+                <p className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                  Set the schedule first to see which vehicles are free.
                 </p>
               ) : obVehicleLoading || obAvailabilityLoading ? (
-                <p className="text-sm text-muted-foreground">
-                  Checking availability...
-                </p>
+                <p className="text-sm text-muted-foreground">Checking availability...</p>
               ) : (obVehicleData?.data ?? []).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No vehicles registered yet.
-                </p>
+                <p className="text-sm text-muted-foreground">No vehicles registered yet.</p>
               ) : (
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
+                <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1">
                   {(obVehicleData?.data ?? []).map((v: any) => {
                     const reason = busyVehicleIds.has(v.vehicle_id)
                       ? "Booked"
@@ -1800,147 +1661,117 @@ export default function DashboardPage() {
                           ? "Maintenance"
                           : null;
                     const selected = obForm.vehicle.includes(v.vehicle_id);
-
                     return (
-                      <div key={v.vehicle_id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`ob-vehicle-${v.vehicle_id}`}
-                          // An already-ticked vehicle stays clickable even if it
-                          // became busy, so the user can still untick it.
-                          disabled={!!reason && !selected}
-                          checked={selected}
-                          onCheckedChange={() => toggleObVehicle(v.vehicle_id)}
-                        />
-                        <label
-                          htmlFor={`ob-vehicle-${v.vehicle_id}`}
-                          className={
-                            reason
-                              ? "font-normal text-red-500 cursor-not-allowed"
-                              : "font-normal cursor-pointer"
-                          }
-                        >
-                          {v.vehicle_name}
-                          {v.plate_number ? ` (${v.plate_number})` : ""}
-                          {v.capacity ? ` - ${v.capacity} seats` : ""}
-                          {reason && <span className="text-xs"> ({reason})</span>}
-                        </label>
-                      </div>
+                      <SelectCard
+                        key={v.vehicle_id}
+                        selected={selected}
+                        // An already-ticked vehicle stays clickable even if it
+                        // became busy, so the user can still untick it.
+                        disabled={!!reason && !selected}
+                        onToggle={() => toggleObVehicle(v.vehicle_id)}
+                        title={v.vehicle_name}
+                        subtitle={[v.plate_number, v.capacity ? `${v.capacity} seats` : null].filter(Boolean).join(" · ")}
+                        badge={reason ?? undefined}
+                      />
                     );
                   })}
                 </div>
               )}
-              {obForm.vehicle.length > 0 && selectedObCapacity > 0 && (
-                <p
-                  className={
-                    Number(obForm.passengers_qty) > selectedObCapacity
-                      ? "text-xs text-red-500"
-                      : "text-xs text-muted-foreground"
-                  }
-                >
-                  Selected seats: {selectedObCapacity}
-                  {Number(obForm.passengers_qty) > selectedObCapacity &&
-                    " - not enough for all passengers"}
-                </p>
-              )}
-            </div>
+              {obForm.vehicle.length > 0 &&
+                selectedObCapacity > 0 &&
+                Number(obForm.passengers_qty) > selectedObCapacity && (
+                  <p className="text-xs text-red-600">
+                    Only {selectedObCapacity} seats - not enough for all passengers.
+                  </p>
+                )}
+            </FormSection>
 
-            {/* Drivers - company pool as checkboxes, plus a personal driver */}
-            <div className="flex flex-col gap-2">
-              <label>Driver</label>
+            <FormSection step={4} title="Driver">
               {!obWindowComplete ? (
-                <p className="text-sm text-muted-foreground">
-                  Set the departure and return schedule first to see which
-                  drivers are free.
+                <p className="rounded-md border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
+                  Set the schedule first to see which drivers are free.
                 </p>
               ) : obDriverLoading || obAvailabilityLoading ? (
-                <p className="text-sm text-muted-foreground">
-                  Checking availability...
-                </p>
+                <p className="text-sm text-muted-foreground">Checking availability...</p>
               ) : (
-                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-2">
+                <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
                   {(obDriverData?.data ?? []).map((dr: any) => {
                     const reason = busyDriverIds.has(dr.driver_id)
-                      ? "On another trip"
+                      ? "Unavailable"
                       : dr.status === "ON_LEAVE"
                         ? "On leave"
                         : null;
                     const selected = obForm.drivers.includes(dr.driver_id);
-
                     return (
-                      <div key={dr.driver_id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`ob-driver-${dr.driver_id}`}
-                          disabled={!!reason && !selected}
-                          checked={selected}
-                          onCheckedChange={() => toggleObDriver(dr.driver_id)}
-                        />
-                        <label
-                          htmlFor={`ob-driver-${dr.driver_id}`}
-                          className={
-                            reason
-                              ? "font-normal text-red-500 cursor-not-allowed"
-                              : "font-normal cursor-pointer"
-                          }
-                        >
-                          {dr.driver_name}
-                          {reason && <span className="text-xs"> ({reason})</span>}
-                        </label>
-                      </div>
+                      <SelectCard
+                        key={dr.driver_id}
+                        selected={selected}
+                        disabled={!!reason && !selected}
+                        onToggle={() => toggleObDriver(dr.driver_id)}
+                        title={dr.driver_name}
+                        badge={reason ?? undefined}
+                      />
                     );
                   })}
-
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="ob-driver-personal"
-                      checked={obForm.personal_driver}
-                      onCheckedChange={(checked) =>
-                        setObForm({
-                          ...obForm,
-                          personal_driver: checked === true,
-                          // Clear the name when unticked so a stale value is
-                          // never sent with the booking.
-                          driver_name: checked === true ? obForm.driver_name : "",
-                        })
-                      }
-                    />
-                    <label
-                      htmlFor="ob-driver-personal"
-                      className="font-normal cursor-pointer"
-                    >
-                      Personal driver
-                    </label>
-                  </div>
+                  <SelectCard
+                    selected={obForm.personal_driver}
+                    onToggle={() =>
+                      setObForm({
+                        ...obForm,
+                        personal_driver: !obForm.personal_driver,
+                        // Clear the name when unticked so a stale value is
+                        // never sent with the booking.
+                        driver_name: obForm.personal_driver ? "" : obForm.driver_name,
+                      })
+                    }
+                    title="Personal driver"
+                    subtitle="Bring your own driver"
+                  />
                 </div>
               )}
-
               {obForm.personal_driver && (
                 <Input
                   placeholder="Personal driver's name"
-                  className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
                   value={obForm.driver_name}
-                  onChange={(e) =>
-                    setObForm({ ...obForm, driver_name: e.target.value })
-                  }
+                  onChange={(e) => setObForm({ ...obForm, driver_name: e.target.value })}
                 />
               )}
-            </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel htmlFor="ob-other">Other request</FieldLabel>
+                <Textarea
+                  id="ob-other"
+                  className="resize-none"
+                  placeholder="Optional"
+                  value={obForm.other_request}
+                  onChange={(e) => setObForm({ ...obForm, other_request: e.target.value })}
+                />
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col gap-1">
-              <label>Other Request</label>
-              <Textarea
-                className="resize-none rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={obForm.other_request}
-                onChange={(e) =>
-                  setObForm({ ...obForm, other_request: e.target.value })
-                }
-              />
-            </div>
+            <Summary
+              rows={[
+                ["Destination", obForm.destination],
+                [
+                  "Leaves",
+                  obForm.date_departure && obForm.time_from ? `${obForm.date_departure} ${obForm.time_from}` : "",
+                ],
+                ["Returns", obForm.date_return && obForm.time_to ? `${obForm.date_return} ${obForm.time_to}` : ""],
+                [
+                  "Vehicle",
+                  (obVehicleData?.data ?? [])
+                    .filter((v: any) => obForm.vehicle.includes(v.vehicle_id))
+                    .map((v: any) => v.vehicle_name)
+                    .join(", "),
+                ],
+                ["Passengers", obForm.passengers_qty],
+              ]}
+            />
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleCreateObReservation}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Book OB Trip
             </Button>

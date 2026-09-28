@@ -1,5 +1,11 @@
 "use client";
 
+import { FormSection, FieldLabel } from "@/components/booking/form-parts";
+import { DetailGrid, DetailItem } from "@/components/booking/detail-parts";
+
+import { FilterStrip, PageHeader, Segmented, TodayPill } from "@/components/management/parts";
+import { TypeChips } from "@/components/management/type-chips";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useState, useEffect, useMemo } from "react";
@@ -124,7 +130,7 @@ export default function HallPage() {
   const [hallForm, setHallForm] = useState({
     name: "",
     floor: "",
-    status: "",
+    status: "OPEN",
   });
   const [editTypeForm, setEditTypeForm] = useState({
     name: "",
@@ -132,7 +138,7 @@ export default function HallPage() {
   const [editHallForm, setEditHallForm] = useState({
     name: "",
     floor: "",
-    status: "",
+    status: "OPEN",
   });
   const [selectedHall, setSelectedHall] = useState<Hall | null>(null);
   const [selectedType, setSelectedType] = useState<HallType | null>(null);
@@ -240,7 +246,7 @@ export default function HallPage() {
       setHallForm({
         name: "",
         floor: "",
-        status: "",
+        status: "OPEN",
       });
 
       queryClient.invalidateQueries({
@@ -495,6 +501,17 @@ export default function HallPage() {
 
   const halls: Hall[] = hallData?.data ?? [];
 
+  // Every hall (unfiltered) for the "today" summary strip.
+  const { data: allHallData } = useQuery({
+    queryKey: ["hall", "summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/halls/rooms/room?limit=500");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json as { data: Hall[]; total: number };
+    },
+  });
+
   // ---- Availability for today -------------------------------------------
   // Hall.status is a manual flag with no date attached, so it cannot express
   // "full on Oct 5". Today's real availability is derived from the day's
@@ -665,238 +682,141 @@ export default function HallPage() {
   //   return map;
   // }, [itemData]);
 
+  const allHalls = allHallData?.data ?? [];
+  const hallBucket = (h: Hall) => {
+    const l = availabilityToday(h).label;
+    return l === "Available" ? "FREE" : l.endsWith("free") ? "PARTLY" : l === "Marked full" ? "MARKED" : "BOOKED";
+  };
+
   return (
     <div className="h-full flex flex-col gap-5">
-      <div className="flex flex-col lg:flex-row items-center justify-between">
-        <div>
-          <h1 className="page-title">Hall Management</h1>
-          <p className="text-sm text-muted-foreground text-wrap">
-            Manage halls
-          </p>
-        </div>
-        <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
-          <Button
-            onClick={() => setOpenTypeForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Hall Type
-          </Button>
+      <PageHeader title="Halls" count={allHallData?.total ?? halls.length} subtitle="Halls and meeting rooms that can be reserved">
+        <Button onClick={() => setOpenHallForm(true)}>+ Add hall</Button>
+      </PageHeader>
 
-          <Button
-            onClick={() => setOpenHallForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Hall
-          </Button>
-        </div>
-      </div>
-      <div className="flex flex-col lg:flex-row gap-3">
+      <FilterStrip
+        title="Availability today"
+        total={allHalls.length}
+        active={status === "FULL" ? "MARKED" : status === "OPEN" ? "FREE" : "all"}
+        onSelect={(key) => {
+          // Only the manual flag can filter the list server-side.
+          setStatus(key === "MARKED" ? "FULL" : key === "FREE" ? "OPEN" : "all");
+          setPage(1);
+        }}
+        items={[
+          { key: "FREE", label: "Free all day", color: "#10b981", count: allHalls.filter((h) => hallBucket(h) === "FREE").length },
+          { key: "PARTLY", label: "Partly booked", color: "#f59e0b", count: allHalls.filter((h) => hallBucket(h) === "PARTLY").length },
+          { key: "BOOKED", label: "Fully booked", color: "#ef4444", count: allHalls.filter((h) => hallBucket(h) === "BOOKED").length },
+          { key: "MARKED", label: "Marked full", color: "#a3a3a3", count: allHalls.filter((h) => hallBucket(h) === "MARKED").length },
+        ]}
+      />
+
+      <TypeChips
+        label="Hall types"
+        hint="Reservation categories users pick when booking"
+        selectable={false}
+        loading={hallTypeLoading}
+        total={0}
+        active={null}
+        onSelect={() => {}}
+        items={(hallTypeData?.data ?? [])
+          .filter((t: any) => !t.deletedAt)
+          .map((t: any) => ({ id: t.type_id, name: t.type }))}
+        onAdd={() => setOpenTypeForm(true)}
+        onEdit={(id) => {
+          const t = (hallTypeData?.data ?? []).find((x: any) => x.type_id === id);
+          if (!t) return;
+          setSelectedType(t);
+          setEditTypeForm({ name: t.type });
+          setOpenTypeEditForm(true);
+        }}
+        onDelete={(id) => {
+          const t = (hallTypeData?.data ?? []).find((x: any) => x.type_id === id);
+          if (!t) return;
+          setSelectedType(t);
+          setOpenTypeDialog(true);
+        }}
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
-          <Input
-            placeholder="Search hall"
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+          <Input placeholder="Search hall" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-
-        <Select
-          value={status}
-          onValueChange={(value) => {
-            setStatus(value);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-full lg:max-w-48 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-              <SelectValue placeholder={"Status"} />
+        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:max-w-44">
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
-
-          <SelectContent
-              position="popper"
-              sideOffset={4}
-              className="w-fit "
-          >
-          <SelectGroup>
+          <SelectContent position="popper" sideOffset={4} className="w-fit">
+            <SelectGroup>
               <SelectLabel>Status</SelectLabel>
-              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="OPEN">Open</SelectItem>
-              <SelectItem value="FULL">Full</SelectItem>
-          </SelectGroup>
+              <SelectItem value="FULL">Marked full</SelectItem>
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="w-full max-w-5xl mx-auto space-y-2">
-        <ScrollArea className="w-full whitespace-nowrap">
-          <div className="flex flex-row gap-3 pb-4">
-            {hallTypeLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-44 shrink-0 rounded-xl border p-4 space-y-2"
-                >
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-5 w-24" />
-                  <Skeleton className="h-3 w-full mt-3" />
-                </div>
-              ))
-            ) : hallTypeData?.data?.length ? (
-              hallTypeData.data
-                .filter((hall: any) => !hall.deletedAt)
-                .map((hall: any) => {
-                  const isActive = selectedTypeFilter === hall.type_id;
-                  return (
-                    <div
-                      key={hall.type_id}
-                      onClick={() => {
-                        setSelectedTypeFilter((prev) =>
-                          prev === hall.type_id ? null : hall.type_id
-                        );
-                      }}
-                      className={cn(
-                        "group relative w-44 shrink-0 cursor-pointer rounded-xl border p-4 transition-all",
-                        isActive
-                          ? "border-brand bg-brand-soft shadow-sm"
-                          : "hover:border-foreground/20 hover:shadow-sm"
-                      )}
-                    >
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute top-1.5 right-1.5 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
-                          >
-                            <Ellipsis className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-
-                        <DropdownMenuContent
-                          align="end"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenuGroup>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedType(hall);
-                                setEditTypeForm({
-                                  name: hall.type,
-                                });
-                                setOpenTypeEditForm(true);
-                              }}
-                            >
-                              Edit
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => {
-                                setSelectedType(hall);
-                                setOpenTypeDialog(true);
-                              }}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <div className="pr-6">
-                        <span
-                          className={cn(
-                            "font-mono text-[11px] tracking-tight",
-                            isActive
-                              ? "text-brand"
-                              : "text-muted-foreground"
-                          )}
-                        >
-                        {hall.type_id}
-                        </span>
-
-                        <p className="mt-1 text-[15px] font-semibold leading-tight">
-                          {hall.type}
-                        </p>
-
-                      </div>
-                    </div>
-                  );
-                })
-            ) : (
-              <p className="text-sm text-muted-foreground p-4">
-                No equipment types found.
-              </p>
-            )}
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </div>
-
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {hallLoading ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10">
+                  <TableCell colSpan={4} className="py-10 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
-                      <span>
-                        Loading hall
-                      </span>
+                      <span>Loading halls</span>
                     </div>
                   </TableCell>
                 </TableRow>
               </TableBody>
             ) : halls.length === 0 ? (
-              <>
-                <TableBody>
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center py-10 text-muted-foreground"
-                    >
-                      <EmptyState title="No halls found" description="Add a hall to get started." />
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                    <EmptyState
+                      title="No halls found"
+                      description="Try another filter, or add a hall."
+                      action={<Button size="sm" onClick={() => setOpenHallForm(true)}>+ Add hall</Button>}
+                    />
+                  </TableCell>
+                </TableRow>
+              </TableBody>
             ) : (
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Hall ID</TableHead>
-                    <TableHead>Hall Name</TableHead>
+                    <TableHead>Hall</TableHead>
                     <TableHead>Floor</TableHead>
-                    <TableHead>Today&apos;s Status</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Today</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {halls.map((hall, index) => (
+                  {halls.map((hall) => (
                     <TableRow
                       key={hall.hall_id}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        // The action menu renders in a portal; ignore its clicks.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setSelectedHall(hall);
+                        setOpenHall(true);
+                      }}
                     >
-                      <TableCell className="font-medium">
-                        {index + 1 + (page - 1) * limit}
+                      <TableCell>
+                        <p className="font-medium">{hall.hall_name}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{hall.hall_id}</p>
                       </TableCell>
 
-                      <TableCell className="font-medium">
-                        {hall.hall_id}
-                      </TableCell>
-
-                      <TableCell>{hall.hall_name}</TableCell>
-
-                      <TableCell>{hall.floor}</TableCell>
+                      <TableCell>{hall.floor ? `Floor ${hall.floor}` : "—"}</TableCell>
 
                       <TableCell>
-                        <span className={availabilityToday(hall).tone}>
-                          {availabilityToday(hall).label}
-                        </span>
+                        <TodayPill {...availabilityToday(hall)} />
                       </TableCell>
 
                       <TableCell>
@@ -985,80 +905,59 @@ export default function HallPage() {
       </div>
 
       <Sheet open={openHallForm} onOpenChange={setOpenHallForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add New Hall
+              New hall
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in hall details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            {/* Hall Name */}
-            <div className="flex flex-col gap-1">
-              <label>Hall Name</label>
-              <Input
-                placeholder="Hall Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={hallForm.name}
-                onChange={(e) =>
-                  setHallForm({ ...hallForm, name: e.target.value })
-                }
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Hall" hint="How it appears when users book a hall.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Name</FieldLabel>
+                  <Input
+                    placeholder="e.g. Function Hall A"
+                    value={hallForm.name}
+                    onChange={(e) => setHallForm({ ...hallForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Floor</FieldLabel>
+                  <Input
+                    placeholder="e.g. 3rd floor"
+                    value={hallForm.floor}
+                    onChange={(e) => setHallForm({ ...hallForm, floor: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection step={2} title="Status" hint="Set to Full when the hall can't take bookings.">
+              <Segmented
+                value={hallForm.status as "OPEN" | "FULL"}
+                onChange={(v) => setHallForm({ ...hallForm, status: v })}
+                options={[{ value: "OPEN", label: "Open" }, { value: "FULL", label: "Full" }]}
               />
-            </div>
-
-            {/* Floor */}
-            <div className="flex flex-col gap-1">
-              <label>Floor</label>
-              <Input
-                placeholder="Floor"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={hallForm.floor}
-                onChange={(e) =>
-                  setHallForm({ ...hallForm, floor: e.target.value })
-                }
-              />
-            </div>
-
-            {/* Item Status */}
-            <div className="flex flex-col gap-1">
-              <label>Hall Status</label>
-
-              <Select value={hallForm.status} onValueChange={(value) =>
-                setHallForm({
-                  ...hallForm,
-                  status: value,
-                })
-              }>
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <SelectValue placeholder={"Status"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                    <SelectLabel>Status</SelectLabel>
-                    <SelectItem value="OPEN">Open</SelectItem>
-                    <SelectItem value="FULL">Full</SelectItem>
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleCreateHall}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Create Hall
+              Add hall
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1068,23 +967,23 @@ export default function HallPage() {
       </Sheet>
 
       <Sheet open={openTypeForm} onOpenChange={setOpenTypeForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add New Hall Type
+              New hall type
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in hall type details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <div className="flex flex-col">
-              <label>Type Name</label>
+          <div className="flex flex-col gap-4 p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type Name</label>
               <Input
                 type="name"
                 placeholder="Hall Type Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className=""
                 value={typeForm.name}
                 onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })}
               />
@@ -1094,7 +993,7 @@ export default function HallPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateHallType}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Create Hall Type
             </Button>
@@ -1102,7 +1001,7 @@ export default function HallPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1112,49 +1011,26 @@ export default function HallPage() {
       </Sheet>
 
       <Sheet open={openHall} onOpenChange={setOpenHall}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Hall Detail
+              Hall
             </SheetTitle>
             <SheetDescription className="text-white">
               Review hall details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
-              Hall ID: {selectedHall?.hall_id}
-            </label>
-
-            <div className="flex flex-col">
-              <label>Hall Name</label>
-              <Input
-                value={selectedHall?.hall_name}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+          <div className="flex flex-col gap-5 p-4">
+            <div className="rounded-lg border border-border bg-neutral-50 p-4">
+              <p className="font-mono text-[11px] text-muted-foreground">{selectedHall?.hall_id}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedHall?.hall_name}</p>
+              <div className="mt-2">{selectedHall && <TodayPill {...availabilityToday(selectedHall)} />}</div>
             </div>
-
-            {/* Hall Type */}
-            <div className="flex flex-col">
-              <label>Hall Floor</label>
-              <Input
-                value={selectedHall?.floor}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            {/* Hall Status */}
-            <div className="flex flex-col">
-              <label>Status</label>
-              <Input
-                value={selectedHall?.status === "OPEN" ? "Open" : "Full"}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
+            <DetailGrid>
+              <DetailItem label="Floor" value={selectedHall?.floor} />
+              <DetailItem label="Status" value={selectedHall?.status === "OPEN" ? "Open" : "Full"} />
+            </DetailGrid>
           </div>
 
           <SheetFooter>
@@ -1170,18 +1046,18 @@ export default function HallPage() {
                 }
                 setOpenHallEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Edit Hall
+              Edit
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="destructive"
                 onClick={() => setOpenHallDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
-                Delete Hall
+                Delete
               </Button>
             </SheetClose>
           </SheetFooter>
@@ -1189,10 +1065,10 @@ export default function HallPage() {
       </Sheet>
 
       <Sheet open={openType} onOpenChange={setOpenType}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Hall Type Detail
+              Hall type
             </SheetTitle>
             <SheetDescription className="text-white">
               Review hall type details below.
@@ -1200,17 +1076,13 @@ export default function HallPage() {
           </SheetHeader>
 
           <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
+            <label className="font-mono text-xs text-muted-foreground">
               Type ID: {selectedType?.type_id}
             </label>
 
-            <div className="flex flex-col">
-              <label>Type Name</label>
-              <Input
-                value={selectedType?.type ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type Name</label>
+              <p className="text-sm font-medium">{(selectedType?.type ?? "") || "—"}</p>
             </div>
           </div>
 
@@ -1225,7 +1097,7 @@ export default function HallPage() {
                 }
                 setOpenTypeEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Edit Type
             </Button>
@@ -1234,7 +1106,7 @@ export default function HallPage() {
               <Button
                 variant="destructive"
                 onClick={() => setOpenTypeDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Delete Type
               </Button>
@@ -1244,72 +1116,51 @@ export default function HallPage() {
       </Sheet>
 
       <Sheet open={openHallEditForm} onOpenChange={setOpenHallEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Hall Detail
+              Edit hall
             </SheetTitle>
             <SheetDescription className="text-white">
               Update hall details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
-              Hall ID: {selectedHall?.hall_id}
-            </label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Hall" hint="How it appears when users book a hall.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Name</FieldLabel>
+                  <Input
+                    placeholder="e.g. Function Hall A"
+                    value={editHallForm.name}
+                    onChange={(e) => setEditHallForm({ ...editHallForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Floor</FieldLabel>
+                  <Input
+                    placeholder="e.g. 3rd floor"
+                    value={editHallForm.floor}
+                    onChange={(e) => setEditHallForm({ ...editHallForm, floor: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Name</label>
-              <Input
-                value={editHallForm.name}
-                onChange={(e) =>
-                  setEditHallForm({ ...editHallForm, name: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+            <FormSection step={2} title="Status" hint="Set to Full when the hall can't take bookings.">
+              <Segmented
+                value={editHallForm.status as "OPEN" | "FULL"}
+                onChange={(v) => setEditHallForm({ ...editHallForm, status: v })}
+                options={[{ value: "OPEN", label: "Open" }, { value: "FULL", label: "Full" }]}
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Floor</label>
-              <Input
-                value={editHallForm.floor}
-                onChange={(e) =>
-                  setEditHallForm({ ...editHallForm, floor: e.target.value })  
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Hall Status</label>
-
-              <Select value={editHallForm.status} onValueChange={(value) =>
-                setEditHallForm({
-                  ...editHallForm,
-                  status: value,
-                })
-              }>
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <SelectValue placeholder={"Status"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                    <SelectLabel>Status</SelectLabel>
-                    <SelectItem value="OPEN">Open</SelectItem>
-                    <SelectItem value="FULL">Full</SelectItem>
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleUpdateHall}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Hall
             </Button>
@@ -1317,7 +1168,7 @@ export default function HallPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1327,29 +1178,29 @@ export default function HallPage() {
       </Sheet>
 
       <Sheet open={openTypeEditForm} onOpenChange={setOpenTypeEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Hall Type
+              Edit hall type
             </SheetTitle>
             <SheetDescription className="text-white">
               Update hall type details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
+          <div className="flex flex-col gap-4 p-4">
+            <label className="font-mono text-xs text-muted-foreground">
               Hall Type ID: {selectedType?.type_id}
             </label>
 
-            <div className="flex flex-col">
-              <label>Name</label>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Name</label>
               <Input
                 value={editTypeForm.name}
                 onChange={(e) =>
                   setEditTypeForm({ ...editTypeForm, name: e.target.value })
                 }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className=""
               />
             </div>
           </div>
@@ -1357,7 +1208,7 @@ export default function HallPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateHallType}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Hall Type
             </Button>
@@ -1365,7 +1216,7 @@ export default function HallPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>

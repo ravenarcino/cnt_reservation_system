@@ -20,9 +20,9 @@ export default function DriverLayout({
     <QueryClientProvider client={queryClient}>
       <SidebarProvider>
         <AppSidebar role="DRIVER" />
-        <main className="w-full">
+        <main className="min-w-0 flex-1">
           <AppTopbar />
-          <div className="p-6">{children}</div>
+          <div className="p-4 sm:p-6">{children}</div>
         </main>
       </SidebarProvider>
     </QueryClientProvider>

@@ -42,7 +42,7 @@ export async function DELETE(
       userId: actorId,
     });
 
-    return NextResponse.json({ success: true, deletedUser, logs });
+    return NextResponse.json({ success: true, deletedUser: { ...deletedUser, password: undefined, resetToken: undefined, resetTokenExpiry: undefined }, logs });
   } catch (error) {
     console.error("SOFT DELETE ERROR:", error);
 
@@ -92,7 +92,7 @@ export async function PATCH(
 
     return NextResponse.json({
       success: true,
-      updated,
+      updated: { ...updated, password: undefined, resetToken: undefined, resetTokenExpiry: undefined },
       logs,
     });
   } catch (error) {

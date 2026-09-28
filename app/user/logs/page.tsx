@@ -1,5 +1,9 @@
 "use client";
 
+import { format } from "date-fns";
+
+import { LogAction, TypeChip } from "@/components/log-action";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useMemo, useState } from "react";
@@ -62,6 +66,7 @@ type Log = {
   reservationId: string | null;
   obReservationId?: string | null;
   reservation_type: string | null;
+  event_type?: string;
   createdAt: string;
 };
 
@@ -203,12 +208,12 @@ export default function UserActivityPage() {
       </div>
 
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {logLoading ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10">
+                  <TableCell colSpan={5} className="text-center py-10">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
                       <span>Loading logs</span>
@@ -219,7 +224,7 @@ export default function UserActivityPage() {
             ) : logs.length === 0 ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                     <EmptyState title="No activity found" description="Actions you take will show up here." />
                   </TableCell>
                 </TableRow>
@@ -228,36 +233,44 @@ export default function UserActivityPage() {
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Log ID</TableHead>
                     <TableHead>Action</TableHead>
-                    <TableHead>Reservation ID</TableHead>
+                    <TableHead>Reference</TableHead>
                     <TableHead>Type</TableHead>
                     <TableHead>Date</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {logs.map((log, index) => (
-                    <TableRow key={log.log_id}>
-                      <TableCell className="font-medium">
-                        {index + 1 + (currentPage - 1) * limit}
+                  {logs.map((log) => (
+                    <TableRow
+                      key={log.log_id}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        // The action menu renders in a portal; ignore its clicks.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setSelectedLog(log);
+                        setOpenLog(true);
+                      }}
+                    >
+                      <TableCell>
+                        <LogAction event={log.event} eventType={log.event_type} changes={log.changes} />
                       </TableCell>
 
-                      <TableCell className="font-medium">{log.log_id}</TableCell>
-
-                      <TableCell>{log.event}</TableCell>
-
-                      <TableCell>{log.reservationId ?? log.obReservationId ?? "—"}</TableCell>
-
-                      <TableCell>{log.reservation_type ?? "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        {log.reservationId ?? log.obReservationId ?? <span className="font-sans text-muted-foreground">—</span>}
+                      </TableCell>
 
                       <TableCell>
-                        {new Date(log.createdAt).toLocaleString([], {
-                          dateStyle: "medium",
-                          timeStyle: "short",
-                        })}
+                        <TypeChip type={log.reservation_type} />
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap">
+                        <p>{format(new Date(log.createdAt), "MMM d, yyyy")}</p>
+                        <p className="text-xs tabular-nums text-muted-foreground">
+                          {format(new Date(log.createdAt), "h:mm a")}
+                        </p>
                       </TableCell>
 
                       <TableCell>
@@ -318,55 +331,62 @@ export default function UserActivityPage() {
       </div>
 
       {openLog && selectedLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <Card className="w-fit lg:w-100 max-w-lg max-h-[85vh] overflow-y-auto relative">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute right-3 top-3 h-8 w-8 rounded-full"
-              onClick={() => setOpenLog(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-
-            <CardHeader>
-              <CardTitle>Activity Detail</CardTitle>
-              <CardDescription>Log ID: {selectedLog.log_id}</CardDescription>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-3">
-              <div>
-                <label className="text-xs text-muted-foreground">Action</label>
-                <p className="font-medium">{selectedLog.event}</p>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            // Click on the dim backdrop closes the popup.
+            if (e.target === e.currentTarget) setOpenLog(false);
+          }}
+        >
+          <Card className="relative w-full max-w-lg max-h-[85vh] gap-0 overflow-y-auto py-0">
+            <div className="flex items-start justify-between gap-4 border-b border-border p-5">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Activity · <span className="font-mono normal-case">{selectedLog.log_id}</span>
+                </p>
+                <div className="mt-2">
+                  <LogAction event={selectedLog.event} eventType={selectedLog.event_type} />
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setOpenLog(false)}
+                aria-label="Close"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-neutral-100 hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-5 p-5">
+              <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Reference</dt>
+                  <dd className="mt-0.5 font-mono text-sm font-medium">
+                    {selectedLog.reservationId ?? selectedLog.obReservationId ?? "—"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Type</dt>
+                  <dd className="mt-1">
+                    <TypeChip type={selectedLog.reservation_type} />
+                  </dd>
+                </div>
+                <div className="sm:col-span-2">
+                  <dt className="text-xs text-muted-foreground">When</dt>
+                  <dd className="mt-0.5 text-sm font-medium">
+                    {format(new Date(selectedLog.createdAt), "EEEE, MMM d, yyyy · h:mm a")}
+                  </dd>
+                </div>
+              </dl>
 
               <div>
-                <label className="text-xs text-muted-foreground">Reservation ID</label>
-                <p className="font-medium">{selectedLog.reservationId ?? selectedLog.obReservationId ?? "—"}</p>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Type</label>
-                <p className="font-medium">{selectedLog.reservation_type ?? "—"}</p>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Date</label>
-                <p className="font-medium">
-                  {new Date(selectedLog.createdAt).toLocaleString([], {
-                    dateStyle: "medium",
-                    timeStyle: "short",
-                  })}
+                <p className="text-xs text-muted-foreground">Details</p>
+                <p className="mt-1.5 whitespace-pre-wrap rounded-md border border-border bg-neutral-50 p-3 text-sm">
+                  {selectedLog.changes || "No details recorded."}
                 </p>
               </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground">Details</label>
-                <p className="font-medium whitespace-pre-wrap">
-                  {selectedLog.changes || "—"}
-                </p>
-              </div>
-            </CardContent>
+            </div>
           </Card>
         </div>
       )}

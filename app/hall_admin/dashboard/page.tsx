@@ -1,486 +1,216 @@
 "use client";
 
-import { useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import {
-  Ticket,
-  Clock,
-  Users,
-  Building,
-  CalendarX,
-  Activity,
-} from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Activity, Building, CalendarCheck, CalendarX, Clock, Ticket } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Greeting } from "@/components/dashboard/greeting";
+import {
+  ACTION_COLORS,
+  ChartCard,
+  DonutChart,
+  HBarChart,
+  SectionHeading,
+  StatGroup,
+  STATUS_COLORS,
+  VBarChart,
+} from "@/components/dashboard/charts";
+import {
+  PendingApprovals,
+  RecentActivity,
+  RecentReservations,
+  TodaySchedule,
+  UpcomingNonWorking,
+} from "@/components/dashboard/admin-tables";
 
 type Reservation = {
-  createdAt?: string;
   reservation_id: string;
   status: string;
-  date_appointment: string;
   purpose: string;
+  date_appointment: string;
+  time_from: string;
+  time_to: string;
+  createdAt?: string;
   hall?: { hall_id: string; hall_name: string }[];
+  hall_user?: { name: string; department?: string } | null;
 };
 
 type Log = {
   log_id: string;
+  event: string;
   event_type: string;
   createdAt: string;
+  reservation_type?: string | null;
+  user_personal_info_log?: { name: string } | null;
 };
 
-const STATUS_COLORS: Record<string, string> = {
-  APPROVED: "#16a34a",
-  PENDING: "#ca8a04",
-  FOR_APPROVAL: "#ca8a04",
-  FOR_REVIEW: "#ea580c",
-  DECLINED: "#dc2626",
-  CANCELLED: "#6b7280",
-  DONE: "#2563eb",
-};
+type Nwd = { nwd_id: string; date: string; description: string; type: string; nwd_type?: string };
 
-const ACTION_COLORS: Record<string, string> = {
-  CREATED: "#16a34a",
-  UPDATED: "#2563eb",
-  DELETED: "#dc2626",
-  CANCELLED: "#6b7280",
-};
+const BASE = "/hall_admin";
+const WEEK = 7 * 24 * 60 * 60 * 1000;
 
-// ---- Dependency-free chart components ----
-
-function DonutChart({
-  data,
-  emptyLabel = "No data",
-}: {
-  data: { label: string; value: number; color?: string }[];
-  emptyLabel?: string;
-}) {
-  const total = data.reduce((s, d) => s + d.value, 0);
-
-  if (data.length === 0 || total === 0) {
-    return <p className="text-sm text-muted-foreground py-6">{emptyLabel}</p>;
-  }
-
-  const palette = [
-    "#16a34a",
-    "#2563eb",
-    "#ca8a04",
-    "#dc2626",
-    "#7c3aed",
-    "#0891b2",
-    "#ea580c",
-    "#6b7280",
-  ];
-
-  let acc = 0;
-  const segments = data
-    .map((d, i) => {
-      const start = (acc / total) * 360;
-      acc += d.value;
-      const end = (acc / total) * 360;
-      const color = d.color ?? palette[i % palette.length];
-      return `${color} ${start}deg ${end}deg`;
-    })
-    .join(", ");
-
-  return (
-    <div className="flex flex-col sm:flex-row items-center gap-4">
-      <div className="relative h-40 w-40 shrink-0">
-        <div
-          className="h-full w-full rounded-full"
-          style={{ background: `conic-gradient(${segments})` }}
-        />
-        <div className="absolute inset-0 m-auto h-20 w-20 rounded-full bg-white flex flex-col items-center justify-center shadow-inner">
-          <span className="text-lg font-bold">{total}</span>
-          <span className="text-[10px] text-muted-foreground">Total</span>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-1.5 w-full">
-        {data.map((d, i) => {
-          const pct = Math.round((d.value / total) * 100);
-          const color = d.color ?? palette[i % palette.length];
-          return (
-            <div key={d.label} className="flex items-center gap-2 text-xs">
-              <span
-                className="h-3 w-3 rounded-sm shrink-0"
-                style={{ backgroundColor: color }}
-              />
-              <span className="font-medium">{d.label}</span>
-              <span className="text-muted-foreground ml-auto">
-                {d.value} ({pct}%)
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function HBarChart({
-  data,
-  emptyLabel = "No data",
-}: {
-  data: { label: string; value: number; color?: string }[];
-  emptyLabel?: string;
-}) {
-  const max = Math.max(1, ...data.map((d) => d.value));
-
-  if (data.length === 0) {
-    return <p className="text-sm text-muted-foreground py-6">{emptyLabel}</p>;
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      {data.map((d) => (
-        <div key={d.label} className="flex flex-col gap-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-medium">{d.label}</span>
-            <span className="text-muted-foreground">{d.value}</span>
-          </div>
-          <div className="h-2.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${(d.value / max) * 100}%`,
-                backgroundColor: d.color ?? "#16a34a",
-              }}
-            />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function VBarChart({
-  data,
-  emptyLabel = "No data",
-}: {
-  data: { label: string; value: number }[];
-  emptyLabel?: string;
-}) {
-  const max = Math.max(1, ...data.map((d) => d.value));
-
-  if (data.length === 0) {
-    return <p className="text-sm text-muted-foreground py-6">{emptyLabel}</p>;
-  }
-
-  return (
-    <div className="flex items-end gap-2 h-48">
-      {data.map((d) => (
-        <div
-          key={d.label}
-          className="flex flex-1 flex-col items-center justify-end gap-1"
-        >
-          <span className="text-[10px] text-muted-foreground">{d.value}</span>
-          <div
-            className="w-full rounded-t bg-brand transition-all"
-            style={{ height: `${(d.value / max) * 100}%`, minHeight: "2px" }}
-          />
-          <span className="text-[10px] text-muted-foreground truncate w-full text-center">
-            {d.label}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function StatCard({
-  title,
-  hint,
-  value,
-  icon,
-  href,
-}: {
-  title: string;
-  hint?: string;
-  value: number | string;
-  icon: React.ReactNode;
-  href?: string;
-}) {
-  const router = useRouter();
-  const clickable = !!href;
-
-  return (
-    <Card
-      role={clickable ? "button" : undefined}
-      tabIndex={clickable ? 0 : undefined}
-      onClick={clickable ? () => router.push(href!) : undefined}
-      onKeyDown={
-        clickable
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                router.push(href!);
-              }
-            }
-          : undefined
-      }
-      className={
-        "shadow-sm" +
-        (clickable
-          ? " cursor-pointer transition-all hover:shadow-md hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand"
-          : "")
-      }
-    >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-xs font-medium uppercase tracking-wide text-muted-foreground leading-tight">
-          {title}
-        </CardTitle>
-        {icon}
-      </CardHeader>
-      <CardContent>
-        <div className="text-3xl font-semibold tabular-nums tracking-tight">{value}</div>
-        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
-  );
-}
-
-export default function SuperAdminDashboard() {
-  const { data: reportData, isLoading } = useQuery({
-    queryKey: ["adminDashboardReport", "HALL"],
+// Hall admin home: the hall half of the super admin dashboard. The reports
+// API pins this role to hall data, hall calendar and Hall/Calendar logs.
+export default function HallAdminDashboard() {
+  // Fixed at mount so the week counts are stable across renders.
+  const [now] = useState(() => Date.now());
+  const { data, isLoading, dataUpdatedAt } = useQuery({
+    queryKey: ["hallAdminDashboard"],
     queryFn: async () => {
-      const res = await fetch(`/api/reports?nwd_type=HALL`);
+      const res = await fetch("/api/reports?scope=hall");
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error);
-      return json;
-    },
-  });
-
-  const { data: usersData } = useQuery({
-    queryKey: ["adminDashboardUsers"],
-    queryFn: async () => {
-      const res = await fetch(`/api/users/user?limit=1`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.error);
-      return json;
+      return json.data as { reservations: Reservation[]; logs: Log[]; nonWorkingDays: Nwd[] };
     },
   });
 
   const { data: hallsData } = useQuery({
-    queryKey: ["adminDashboardHalls"],
+    queryKey: ["hallAdminDashboardHalls"],
     queryFn: async () => {
-      const res = await fetch(`/api/halls/rooms/room?limit=1`);
+      const res = await fetch("/api/halls/rooms/room?limit=1");
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error);
       return json;
     },
   });
 
-  const reservations: Reservation[] = reportData?.data?.reservations ?? [];
-  const logs: Log[] = reportData?.data?.logs ?? [];
-  const nonWorkingDays = reportData?.data?.nonWorkingDays ?? [];
-
-  const totalUsers = usersData?.total ?? 0;
-  const totalHalls = hallsData?.total ?? 0;
+  const reservations = useMemo(() => data?.reservations ?? [], [data]);
+  const logs = useMemo(() => data?.logs ?? [], [data]);
+  const nonWorkingDays = useMemo(() => data?.nonWorkingDays ?? [], [data]);
 
   const kpis = useMemo(() => {
-    const total = reservations.length;
-    const pending = reservations.filter(
-      (r) => r.status === "PENDING" || r.status === "FOR_APPROVAL",
-    ).length;
     const todayStr = format(new Date(), "yyyy-MM-dd");
-    const today = reservations.filter(
-      (r) => format(new Date(r.date_appointment), "yyyy-MM-dd") === todayStr,
-    ).length;
-    // Filed in the last 7 days, for the "+N this week" hint.
-    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    const thisWeek = reservations.filter(
-      (r) => r.createdAt && new Date(r.createdAt).getTime() >= weekAgo,
-    ).length;
-    return { total, pending, today, thisWeek };
-  }, [reservations]);
+    const filed = (from: number, to: number) =>
+      reservations.filter((r) => {
+        const c = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+        return c >= from && c < to;
+      }).length;
+    return {
+      total: reservations.length,
+      pending: reservations.filter((r) => ["PENDING", "FOR_APPROVAL", "FOR_REVIEW"].includes(r.status)).length,
+      approved: reservations.filter((r) => r.status === "APPROVED").length,
+      today: reservations.filter(
+        (r) =>
+          format(new Date(r.date_appointment), "yyyy-MM-dd") === todayStr &&
+          r.status !== "CANCELLED" &&
+          r.status !== "DECLINED",
+      ).length,
+      thisWeek: filed(now - WEEK, now + 1),
+      lastWeek: filed(now - 2 * WEEK, now - WEEK),
+    };
+  }, [reservations, now]);
 
   const byStatus = useMemo(() => {
     const counts: Record<string, number> = {};
-    reservations.forEach((r) => {
-      counts[r.status] = (counts[r.status] ?? 0) + 1;
-    });
+    reservations.forEach((r) => (counts[r.status] = (counts[r.status] ?? 0) + 1));
     return Object.entries(counts)
-      .map(([label, value]) => ({
-        label,
-        value,
-        color: STATUS_COLORS[label] ?? "#2563eb",
-      }))
+      .map(([label, value]) => ({ label, value, color: STATUS_COLORS[label] ?? "#0ea5e9" }))
       .sort((a, b) => b.value - a.value);
   }, [reservations]);
 
   const byMonth = useMemo(() => {
     const counts: Record<string, number> = {};
     reservations.forEach((r) => {
-      const key = format(new Date(r.date_appointment), "MMM yyyy");
-      counts[key] = (counts[key] ?? 0) + 1;
+      const k = format(new Date(r.date_appointment), "yyyy-MM");
+      counts[k] = (counts[k] ?? 0) + 1;
     });
-    return Object.entries(counts)
-      .map(([label, value]) => ({
-        label,
-        value,
-        sort: new Date(label).getTime(),
-      }))
-      .sort((a, b) => a.sort - b.sort)
+    return Object.keys(counts)
+      .sort()
       .slice(-12)
-      .map(({ label, value }) => ({ label, value }));
+      .map((k) => ({ label: format(new Date(`${k}-01T00:00:00`), "MMM yy"), value: counts[k] }));
   }, [reservations]);
 
   const topHalls = useMemo(() => {
     const counts: Record<string, number> = {};
-    reservations.forEach((r) => {
-      (r.hall ?? []).forEach((h) => {
-        counts[h.hall_name] = (counts[h.hall_name] ?? 0) + 1;
-      });
-    });
+    reservations
+      .filter((r) => r.status !== "CANCELLED" && r.status !== "DECLINED")
+      .forEach((r) => (r.hall ?? []).forEach((h) => (counts[h.hall_name] = (counts[h.hall_name] ?? 0) + 1)));
     return Object.entries(counts)
-      .map(([label, value]) => ({ label, value, color: "#0f766e" }))
+      .map(([label, value]) => ({ label, value, color: "#dc2626" }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
   }, [reservations]);
 
   const byAction = useMemo(() => {
     const counts: Record<string, number> = {};
-    logs.forEach((l) => {
-      const key = l.event_type || "OTHER";
-      counts[key] = (counts[key] ?? 0) + 1;
-    });
+    logs.forEach((l) => (counts[l.event_type || "OTHER"] = (counts[l.event_type || "OTHER"] ?? 0) + 1));
     return Object.entries(counts)
-      .map(([label, value]) => ({
-        label,
-        value,
-        color: ACTION_COLORS[label] ?? "#2563eb",
-      }))
+      .map(([label, value]) => ({ label, value, color: ACTION_COLORS[label] ?? "#8b5cf6" }))
       .sort((a, b) => b.value - a.value);
   }, [logs]);
 
   return (
     <div className="h-full flex flex-col gap-5">
-      <div>
-        <h1 className="page-title">Dashboard</h1>
-        <p className="text-sm text-muted-foreground text-wrap">
-          System overview and key metrics
-        </p>
-      </div>
+      <Greeting caption="Here's what's happening with hall reservations" updatedAt={dataUpdatedAt} />
 
       {isLoading ? (
-        <div className="flex items-center justify-center gap-2 text-muted-foreground py-20">
+        <div className="flex items-center justify-center gap-2 py-20 text-muted-foreground">
           <Spinner />
           <span>Loading dashboard...</span>
         </div>
       ) : (
         <>
-          {/* KPI cards */}
-          <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3">
-            <StatCard
-              title="Total Reservations"
-              hint={`+${kpis.thisWeek} filed this week`}
-              value={kpis.total}
-              icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/hall-reservation"
-            />
-            <StatCard
-              title="Pending Approval"
-              hint={kpis.pending > 0 ? "Needs review" : "All caught up"}
-              value={kpis.pending}
-              icon={<Clock className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/hall-reservation"
-            />
-            <StatCard
-              title="Today's Reservations"
-              hint={format(new Date(), "EEE, MMM d")}
-              value={kpis.today}
-              icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/hall-reservation"
-            />
-            <StatCard
-              title="Total Users"
-              value={totalUsers}
-              icon={<Users className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/user-management"
-            />
-            <StatCard
-              title="Total Halls"
-              value={totalHalls}
-              icon={<Building className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/hall-management"
-            />
+          <SectionHeading title="Hall reservations" caption="Bookings of halls and meeting rooms" />
+          <StatGroup
+            title="Overview"
+            stats={[
+              {
+                label: "Total reservations",
+                value: kpis.total,
+                delta: kpis.thisWeek - kpis.lastWeek,
+                hint: `${kpis.thisWeek} filed this week`,
+                icon: <Ticket />,
+                href: `${BASE}/hall-reservation`,
+              },
+              {
+                label: "Pending approval",
+                value: kpis.pending,
+                hint: kpis.pending > 0 ? "Needs review" : "All caught up",
+                icon: <Clock />,
+                href: `${BASE}/hall-reservation`,
+              },
+              { label: "Approved", value: kpis.approved, icon: <CalendarCheck />, href: `${BASE}/hall-reservation` },
+              { label: "Today", value: kpis.today, hint: format(new Date(), "EEE, MMM d"), icon: <Ticket />, href: `${BASE}/hall-reservation` },
+            ]}
+          />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            <ChartCard title="By status" subtitle="All hall reservations">
+              <DonutChart data={byStatus} emptyLabel="No reservations" />
+            </ChartCard>
+            <ChartCard title="Over time" subtitle="Reservations per month" className="lg:col-span-2">
+              <VBarChart data={byMonth} emptyLabel="No reservations" />
+            </ChartCard>
+            <ChartCard title="Top halls" subtitle="Most booked, excluding cancelled" className="lg:col-span-3">
+              <HBarChart data={topHalls} emptyLabel="No hall usage" />
+            </ChartCard>
           </div>
 
-          {/* Charts */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm">
-                  Reservations by Status
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DonutChart data={byStatus} emptyLabel="No reservations" />
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm">
-                  Reservations Over Time
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <VBarChart data={byMonth} emptyLabel="No reservations" />
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm">Top Halls</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <HBarChart data={topHalls} emptyLabel="No hall usage" />
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-sm">
-              <CardHeader>
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Activity className="h-4 w-4" />
-                  Activity by Action
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <DonutChart data={byAction} emptyLabel="No activity" />
-              </CardContent>
-            </Card>
+          <SectionHeading title="Needs attention" caption="Pending requests and today's bookings" />
+          <PendingApprovals halls={reservations} trips={[]} hallHref={`${BASE}/hall-reservation`} obHref={`${BASE}/hall-reservation`} />
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
+            <TodaySchedule halls={reservations} trips={[]} />
+            <UpcomingNonWorking days={nonWorkingDays} href={`${BASE}/calendar-management`} />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-            <StatCard
-              title="Non-Working Days"
-              value={nonWorkingDays.length}
-              icon={<CalendarX className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/calendar-management"
+          <SectionHeading title="Activity" caption="Halls, calendar and what changed" />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+            <StatGroup
+              title="Resources"
+              stats={[
+                { label: "Halls", value: hallsData?.total ?? 0, icon: <Building />, href: `${BASE}/hall-management` },
+                { label: "Non-working days", value: nonWorkingDays.length, icon: <CalendarX />, href: `${BASE}/calendar-management` },
+                { label: "Activity logs", value: logs.length, icon: <Activity />, href: `${BASE}/logs` },
+              ]}
             />
-            <StatCard
-              title="Total Activity Logs"
-              value={logs.length}
-              icon={<Activity className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/logs"
-            />
-            <StatCard
-              title="Approved Reservations"
-              value={
-                reservations.filter((r) => r.status === "APPROVED").length
-              }
-              icon={<Ticket className="h-4 w-4 text-muted-foreground" />}
-              href="/hall_admin/hall-reservation"
-            />
+            <ChartCard title="Activity by action" subtitle="Hall and calendar logs">
+              <DonutChart data={byAction} emptyLabel="No activity" />
+            </ChartCard>
           </div>
+          <RecentActivity logs={logs} href={`${BASE}/logs`} />
+
+          <SectionHeading title="Recent reservations" caption="Newest hall bookings" />
+          <RecentReservations halls={reservations} trips={[]} href={`${BASE}/hall-reservation`} />
         </>
       )}
     </div>

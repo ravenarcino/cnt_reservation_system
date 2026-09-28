@@ -1,5 +1,10 @@
 "use client";
 
+import { formatDistanceToNow } from "date-fns";
+import { StatusSummary } from "@/components/booking/status-summary";
+import { DetailGrid, DetailHeader, DetailItem, StatusSteps } from "@/components/booking/detail-parts";
+import { Person } from "@/components/dashboard/admin-tables";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -89,7 +94,8 @@ type Trip = {
   status: string;
   vehicle: { vehicle_id: string; vehicle_name: string; plate_number?: string | null }[];
   drivers: { driver_id: string; driver_name: string }[];
-  ob_user: { name: string } | null;
+  ob_user: { name: string; email?: string; department?: string } | null;
+  createdAt?: string;
 };
 
 type AdminAction = "Approve" | "Decline" | "Cancel";
@@ -429,6 +435,15 @@ export default function ObReservationPage() {
         </div>
       </div>
 
+      <StatusSummary
+        statuses={((tripData?.data ?? []) as Trip[]).map((t) => t.status)}
+        active={statusFilter}
+        onSelect={(st) => {
+          setStatusFilter(st);
+          setPage(1);
+        }}
+      />
+
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -495,26 +510,24 @@ export default function ObReservationPage() {
       </div>
 
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>No.</TableHead>
-                <TableHead>OB ID</TableHead>
-                <TableHead>Purpose</TableHead>
+                <TableHead>Requester</TableHead>
+                <TableHead>Trip</TableHead>
                 <TableHead>Destination</TableHead>
-                <TableHead>Vehicle</TableHead>
-                <TableHead>Departure</TableHead>
-                <TableHead>Return</TableHead>
-                <TableHead>Passengers</TableHead>
+                <TableHead>Schedule</TableHead>
+                <TableHead className="text-right">Pax</TableHead>
+                <TableHead>Filed</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead>Action</TableHead>
+                <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-10">
+                  <TableCell colSpan={8} className="text-center py-10">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
                       <span>Loading reservations</span>
@@ -523,28 +536,49 @@ export default function ObReservationPage() {
                 </TableRow>
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={10} className="text-center py-10 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-10 text-muted-foreground">
                     <EmptyState title="No reservation found" description="Try a different search or status filter." />
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((trip, index) => {
+                rows.map((trip) => {
                   const actions = getAvailableActions(trip.status);
                   const actionable = isActionable(trip);
                   return (
-                    <TableRow key={trip.ob_id}>
-                      <TableCell className="font-medium">
-                        {index + 1 + (currentPage - 1) * limit}
-                      </TableCell>
-                      <TableCell className="font-medium">{trip.ob_id}</TableCell>
-                      <TableCell className="max-w-[160px] truncate">{trip.purpose}</TableCell>
-                      <TableCell>{trip.destination}</TableCell>
+                    <TableRow
+                      key={trip.ob_id}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        // The action menu renders in a portal; ignore its clicks.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setSelected(trip);
+                        setOpenView(true);
+                      }}
+                    >
                       <TableCell>
-                        {trip.vehicle.map((v) => v.vehicle_name).join(", ") || "—"}
+                        <Person name={trip.ob_user?.name} sub={trip.ob_user?.department} />
                       </TableCell>
-                      <TableCell>{format(new Date(trip.time_from), "MMM d, h:mm a")}</TableCell>
-                      <TableCell>{format(new Date(trip.time_to), "MMM d, h:mm a")}</TableCell>
-                      <TableCell>{trip.passengers_qty}</TableCell>
+                      <TableCell className="max-w-[220px]">
+                        <p className="truncate font-medium">{trip.purpose}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{trip.ob_id}</p>
+                      </TableCell>
+                      <TableCell className="max-w-[200px]">
+                        <p className="truncate">{trip.destination}</p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {trip.vehicle.map((v) => v.vehicle_name).join(", ") || "No vehicle"}
+                        </p>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        <p className="font-medium">{format(new Date(trip.time_from), "EEE, MMM d · h:mm a")}</p>
+                        <p className="text-xs tabular-nums text-muted-foreground">
+                          until {format(new Date(trip.time_to), "MMM d, h:mm a")}
+                        </p>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{trip.passengers_qty}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                        {trip.createdAt ? formatDistanceToNow(new Date(trip.createdAt), { addSuffix: true }) : "—"}
+                      </TableCell>
                       <TableCell><StatusBadge status={trip.status} /></TableCell>
                       <TableCell>
                         <DropdownMenu>
@@ -647,10 +681,10 @@ export default function ObReservationPage() {
 
         const deleteButton = (
           <Button
-            className="w-full lg:w-20 bg-red-600 rounded-sm py-5 text-white font-medium"
+            className="w-full lg:w-10 h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
             onClick={() => setOpenDelete(true)}
           >
-            <Trash className="h-4 w-4 text-white" />
+            <Trash className="h-4 w-4" />
             <p className="block lg:hidden">Delete</p>
           </Button>
         );
@@ -659,7 +693,7 @@ export default function ObReservationPage() {
           actions.approve && (
             <Button
               key="approve"
-              className="w-full lg:flex-1 bg-green-600 rounded-sm py-5 text-white font-medium"
+              className="w-full lg:flex-1 h-10 bg-emerald-600 text-white hover:bg-emerald-700"
               disabled={!actionable}
               onClick={() => startAction(selected, "Approve")}
             >
@@ -669,7 +703,7 @@ export default function ObReservationPage() {
           actions.decline && (
             <Button
               key="decline"
-              className="w-full lg:flex-1 bg-red-600 rounded-sm py-5 text-white font-medium"
+              className="w-full lg:flex-1 h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
               disabled={!actionable}
               onClick={() => startAction(selected, "Decline")}
             >
@@ -679,7 +713,7 @@ export default function ObReservationPage() {
           actions.cancel && (
             <Button
               key="cancel"
-              className="w-full lg:flex-1 bg-yellow-600 rounded-sm py-5 text-white font-medium"
+              className="w-full lg:flex-1 h-10 border border-border bg-white text-foreground hover:bg-neutral-50"
               disabled={!actionable}
               onClick={() => startAction(selected, "Cancel")}
             >
@@ -690,73 +724,68 @@ export default function ObReservationPage() {
 
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-            <Card className="w-full max-w-xl max-h-[85vh] overflow-y-auto relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-3 top-3 h-8 w-8 rounded-full"
-                onClick={() => setOpenView(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+            <Card className="relative w-full max-w-2xl max-h-[88vh] gap-0 overflow-y-auto py-0">
+              <DetailHeader
+                kind="OB trip"
+                reference={selected.ob_id}
+                title={selected.purpose}
+                status={selected.status}
+                onClose={() => setOpenView(false)}
+              />
 
-              <CardHeader>
-                <CardTitle>OB Reservation Detail</CardTitle>
-                <CardDescription>OB ID: {selected.ob_id}</CardDescription>
-              </CardHeader>
-
-              <CardContent className="flex flex-col gap-3">
-                <Detail label="Reserved By" value={selected.ob_user?.name ?? "—"} />
-                <Detail label="Purpose" value={selected.purpose} />
-                <Detail label="Destination" value={selected.destination} />
-                <Detail
-                  label="Vehicles"
-                  value={
-                    selected.vehicle
-                      .map((v) => v.vehicle_name + (v.plate_number ? ` (${v.plate_number})` : ""))
-                      .join(", ") || "—"
-                  }
-                />
-                <Detail label="Driver" value={driverList(selected)} />
-                <div className="grid grid-cols-2 gap-3">
-                  <Detail
-                    label="Departure"
-                    value={format(new Date(selected.time_from), "MMM d, yyyy h:mm a")}
-                  />
-                  <Detail
-                    label="Return"
-                    value={format(new Date(selected.time_to), "MMM d, yyyy h:mm a")}
-                  />
+              <div className="flex flex-col gap-5 p-5">
+                <div className="rounded-md border border-border bg-neutral-50 px-4 py-3">
+                  <StatusSteps status={selected.status} />
                 </div>
-                <Detail label="Passengers" value={String(selected.passengers_qty)} />
-                <Detail label="Other Request" value={selected.other_request || "—"} />
-                <Detail label="Status" value={statusLabel(selected.status)} />
+
+                <div className="flex items-center justify-between rounded-md border border-border p-3">
+                  <Person name={selected.ob_user?.name} sub={selected.ob_user?.email} />
+                  <span className="text-xs text-muted-foreground">
+                    {selected.createdAt
+                      ? `Filed ${formatDistanceToNow(new Date(selected.createdAt), { addSuffix: true })}`
+                      : ""}
+                  </span>
+                </div>
+
+                <DetailGrid>
+                  <DetailItem label="Destination" value={selected.destination} />
+                  <DetailItem label="Passengers" value={String(selected.passengers_qty)} />
+                  <DetailItem label="Departure" value={format(new Date(selected.time_from), "EEE, MMM d, yyyy · h:mm a")} />
+                  <DetailItem label="Return" value={format(new Date(selected.time_to), "EEE, MMM d, yyyy · h:mm a")} />
+                  <DetailItem
+                    label="Vehicle"
+                    value={selected.vehicle
+                      .map((v) => v.vehicle_name + (v.plate_number ? ` (${v.plate_number})` : ""))
+                      .join(", ")}
+                  />
+                  <DetailItem label="Driver" value={driverList(selected)} />
+                  <DetailItem wide label="Other request" value={selected.other_request || "None"} />
+                </DetailGrid>
 
                 {cancellationData?.cancellation && (
-                  <div>
-                    <label className="text-xs text-muted-foreground">Cancellation Reason</label>
-                    <p className="font-medium">{cancellationData.cancellation.reason}</p>
-                    <label className="text-xs text-muted-foreground mt-2 block">Proof</label>
+                  <div className="rounded-md border border-orange-200 bg-orange-50 p-4 text-sm">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-orange-800">Cancellation request</p>
+                    <p className="mt-1.5">{cancellationData.cancellation.reason}</p>
                     <a
                       href={`/api/uploads/cancellations/${cancellationData.cancellation.path.split("/").pop()}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 underline text-sm font-medium"
+                      className="mt-2 inline-block text-xs font-medium text-brand underline"
                     >
-                      {cancellationData.cancellation.file_name}
+                      View proof: {cancellationData.cancellation.file_name}
                     </a>
                   </div>
                 )}
-              </CardContent>
+              </div>
 
               {/* Same layout as the hall card: Edit beside a small Delete; when
                   there is no Edit, Delete joins the status row; alone, it is
                   full width. */}
-              <div className="flex flex-col gap-2 p-4 pt-0">
+              <div className="flex flex-col gap-2 border-t border-border p-5">
                 {actions.edit && (
                   <div className="flex flex-col lg:flex-row gap-2">
                     <Button
-                      className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                      className="w-full lg:flex-1 h-10"
                       disabled={!actionable}
                       onClick={() => startEdit(selected)}
                     >
@@ -775,10 +804,10 @@ export default function ObReservationPage() {
 
                 {!actions.edit && statusButtons.length === 0 && (
                   <Button
-                    className="w-full bg-red-600 rounded-sm py-5 text-white font-medium"
+                    className="w-full h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
                     onClick={() => setOpenDelete(true)}
                   >
-                    <Trash className="h-4 w-4 text-white" />
+                    <Trash className="h-4 w-4" />
                     <p className="ml-2">Delete</p>
                   </Button>
                 )}
@@ -1004,10 +1033,33 @@ export default function ObReservationPage() {
       <AlertDialog open={openAction} onOpenChange={setOpenAction}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-bold">{action} this reservation?</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
-              This will update the reservation status. This action can`t be undone.
+            <AlertDialogTitle>
+              {action === "Approve"
+                ? "Approve this OB trip?"
+                : action === "Decline"
+                  ? selected?.status === "FOR_REVIEW"
+                    ? "Decline the cancellation request?"
+                    : "Decline this OB trip?"
+                  : "Cancel this OB trip?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {action === "Approve"
+                ? "The vehicle and driver are reserved for this trip and the requester is notified."
+                : action === "Decline"
+                  ? selected?.status === "FOR_REVIEW"
+                    ? "The request is rejected and the trip stays as it was."
+                    : "The request is rejected and the vehicle is freed up."
+                  : "The trip is called off and the vehicle is freed up."}
             </AlertDialogDescription>
+            {selected && (
+              <div className="mt-2 rounded-md border border-border bg-neutral-50 p-3 text-sm">
+                <p className="font-medium">{selected.purpose}</p>
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono">{selected.ob_id}</span> · {selected.destination} ·{" "}
+                  {format(new Date(selected.time_from), "MMM d, h:mm a")}
+                </p>
+              </div>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
@@ -1015,11 +1067,9 @@ export default function ObReservationPage() {
               onClick={handleStatusAction}
               disabled={busy}
               className={
-                action === "Decline"
-                  ? "bg-red-600 hover:bg-red-700 text-white"
-                  : action === "Approve"
-                    ? "bg-green-600 hover:bg-green-700 text-white"
-                    : "bg-yellow-600 hover:bg-yellow-700 text-white"
+                action === "Approve"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-red-600 hover:bg-red-700 text-white"
               }
             >
               {busy ? "Processing..." : action}

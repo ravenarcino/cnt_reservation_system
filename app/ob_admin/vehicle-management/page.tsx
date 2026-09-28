@@ -1,5 +1,11 @@
 "use client";
 
+import { FormSection, FieldLabel } from "@/components/booking/form-parts";
+import { DetailGrid, DetailItem } from "@/components/booking/detail-parts";
+
+import { FilterStrip, PageHeader, Segmented, TodayPill } from "@/components/management/parts";
+import { TypeChips } from "@/components/management/type-chips";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useState, useEffect, useMemo } from "react";
@@ -124,7 +130,7 @@ export default function VehiclePage() {
     plate_number: "",
     capacity: "",
     vehicle_type: "",
-    status: "",
+    status: "AVAILABLE",
   });
   const [editTypeForm, setEditTypeForm] = useState({
     name: "",
@@ -135,7 +141,7 @@ export default function VehiclePage() {
     plate_number: "",
     capacity: "",
     vehicle_type: "",
-    status: "",
+    status: "AVAILABLE",
   });
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [returningVehicleId, setReturningVehicleId] = useState<string | null>(null);
@@ -247,7 +253,7 @@ export default function VehiclePage() {
         plate_number: "",
         capacity: "",
         vehicle_type: "",
-        status: "",
+        status: "AVAILABLE",
       });
 
       queryClient.invalidateQueries({
@@ -573,6 +579,17 @@ export default function VehiclePage() {
 
   const vehicles: Vehicle[] = vehicleData?.data ?? [];
 
+  // Every vehicle (unfiltered) for the "today" summary strip.
+  const { data: allVehicleData } = useQuery({
+    queryKey: ["vehicle", "summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/vehicles/vehicles/vehicle?limit=500");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json as { data: Vehicle[]; total: number };
+    },
+  });
+
   // Every OB trip, to work out who and what is out today.
   const { data: obTripData } = useQuery({
     queryKey: ["obReservation", "all"],
@@ -660,281 +677,172 @@ export default function VehiclePage() {
 
 
 
+  // Today's status for every vehicle, grouped for the summary strip.
+  const allVehicles = allVehicleData?.data ?? [];
+  const bucket = (v: Vehicle) => {
+    if (v.status === "MAINTENANCE") return "MAINTENANCE";
+    if (v.status === "IN_USE") return "IN_USE";
+    const label = vehicleToday(v).label;
+    return label.startsWith("On trip") ? "ON_TRIP" : label.startsWith("Booked") ? "BOOKED" : "FREE";
+  };
+
   return (
     <div className="h-full flex flex-col gap-5">
-      <div className="flex flex-col lg:flex-row items-center justify-between">
-        <div>
-          <h1 className="page-title">Vehicle Management</h1>
-          <p className="text-sm text-muted-foreground text-wrap">
-            Manage company vehicles
-          </p>
-        </div>
-        <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
-          <Button
-            onClick={() => setOpenTypeForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Vehicle Type
-          </Button>
+      <PageHeader title="Vehicles" count={allVehicleData?.total ?? totalItems} subtitle="Company vehicles for OB trips">
+        <Button onClick={() => setOpenVehicleForm(true)}>+ Add vehicle</Button>
+      </PageHeader>
 
-          <Button
-            onClick={() => setOpenVehicleForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Vehicle
-          </Button>
-        </div>
-      </div>
-      <div className="flex flex-col lg:flex-row gap-3">
+      <FilterStrip
+        title="Fleet today"
+        total={allVehicles.length}
+        active={status === "AVAILABLE" ? "FREE" : status}
+        onSelect={(key) => {
+          // Only the manual statuses can filter the list server-side.
+          setStatus(["IN_USE", "MAINTENANCE"].includes(key) ? key : key === "FREE" ? "AVAILABLE" : "all");
+          setPage(1);
+        }}
+        items={[
+          { key: "FREE", label: "Free now", color: "#10b981", count: allVehicles.filter((v) => bucket(v) === "FREE").length },
+          { key: "BOOKED", label: "Booked later today", color: "#f59e0b", count: allVehicles.filter((v) => bucket(v) === "BOOKED").length },
+          { key: "ON_TRIP", label: "On a trip", color: "#ef4444", count: allVehicles.filter((v) => bucket(v) === "ON_TRIP").length },
+          { key: "IN_USE", label: "Marked in use", color: "#f97316", count: allVehicles.filter((v) => bucket(v) === "IN_USE").length },
+          { key: "MAINTENANCE", label: "Maintenance", color: "#a3a3a3", count: allVehicles.filter((v) => bucket(v) === "MAINTENANCE").length },
+        ]}
+      />
+
+      <TypeChips
+        label="Vehicle types"
+        loading={vehicleTypeLoading}
+        total={allVehicles.length}
+        active={selectedTypeFilter}
+        onSelect={(id) => {
+          setSelectedTypeFilter(id);
+          setPage(1);
+        }}
+        items={(vehicleTypeData?.data ?? [])
+          .filter((t: any) => !t.deletedAt)
+          .map((t: any) => ({ id: t.type_id, name: t.type, count: t._count?.vehicles ?? 0 }))}
+        onAdd={() => setOpenTypeForm(true)}
+        onEdit={(id) => {
+          const t = (vehicleTypeData?.data ?? []).find((x: any) => x.type_id === id);
+          if (!t) return;
+          setSelectedType(t);
+          setEditTypeForm({ name: t.type });
+          setOpenTypeEditForm(true);
+        }}
+        onDelete={(id) => {
+          const t = (vehicleTypeData?.data ?? []).find((x: any) => x.type_id === id);
+          if (!t) return;
+          setSelectedType(t);
+          setOpenTypeDialog(true);
+        }}
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
           <Input
-            placeholder="Search vehicle"
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
+            placeholder="Search by name, brand or plate"
+            className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <Select
-          value={status}
-          onValueChange={(value) => {
-            setStatus(value);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-full lg:max-w-48 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-              <SelectValue placeholder={"Status"} />
+        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:max-w-44">
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
-
-          <SelectContent
-              position="popper"
-              sideOffset={4}
-              className="w-fit "
-          >
-          <SelectGroup>
+          <SelectContent position="popper" sideOffset={4} className="w-fit">
+            <SelectGroup>
               <SelectLabel>Status</SelectLabel>
-              <SelectItem value="all">All</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="AVAILABLE">Available</SelectItem>
-              <SelectItem value="IN_USE">In Use</SelectItem>
+              <SelectItem value="IN_USE">In use</SelectItem>
               <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
-          </SelectGroup>
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="w-full max-w-5xl mx-auto space-y-2">
-        {selectedTypeFilter && (
-          <button
-            onClick={() => {
-              setSelectedTypeFilter(null);
-              setPage(1);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
-          >
-            Filtered by{" "}
-            <span className="text-foreground">
-              {vehicleTypeMap[selectedTypeFilter] ?? selectedTypeFilter}
-            </span>
-            <X className="h-3 w-3" />
-          </button>
-        )}
-
-        <ScrollArea className="w-full whitespace-nowrap">
-          <div className="flex flex-row gap-3 pb-4">
-            {vehicleTypeLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-44 shrink-0 rounded-xl border p-4 space-y-2"
-                >
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-5 w-24" />
-                  <Skeleton className="h-3 w-full mt-3" />
-                </div>
-              ))
-            ) : vehicleTypeData?.data?.length ? (
-              vehicleTypeData.data
-                .filter((vehicle: any) => !vehicle.deletedAt)
-                .map((vtype: any) => {
-                  const isActive = selectedTypeFilter === vtype.type_id;
-                  return (
-                    <div
-                      key={vtype.type_id}
-                      onClick={() => {
-                        setSelectedTypeFilter((prev) =>
-                          prev === vtype.type_id ? null : vtype.type_id
-                        );
-                        setPage(1);
-                      }}
-                      className={cn(
-                        "group relative w-44 shrink-0 cursor-pointer rounded-xl border p-4 transition-all",
-                        isActive
-                          ? "border-brand bg-brand-soft shadow-sm"
-                          : "hover:border-foreground/20 hover:shadow-sm"
-                      )}
-                    >
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute top-1.5 right-1.5 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
-                          >
-                            <Ellipsis className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-
-                        <DropdownMenuContent
-                          align="end"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenuGroup>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedType(vtype);
-                                setEditTypeForm({
-                                  name: vtype.type,
-                                });
-                                setOpenTypeEditForm(true);
-                              }}
-                            >
-                              Edit
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => {
-                                setSelectedType(vtype);
-                                setOpenTypeDialog(true);
-                              }}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <div className="pr-6">
-                        <span
-                          className={cn(
-                            "font-mono text-[11px] tracking-tight",
-                            isActive
-                              ? "text-brand"
-                              : "text-muted-foreground"
-                          )}
-                        >
-                          {vtype.type_id}
-                        </span>
-
-                        <p className="mt-1 text-[15px] font-semibold leading-tight">
-                          {vtype.type}
-                        </p>
-
-                        <div className="mt-3 flex items-center justify-between border-t pt-2">
-                          <span className="text-xs text-muted-foreground">
-                            Vehicles
-                          </span>
-
-                          <span
-                            className={cn(
-                              "rounded-md px-2 py-0.5 text-xs font-semibold",
-                              isActive
-                                ? "bg-brand text-white"
-                                : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                            )}
-                          >
-                            {(vtype._count?.vehicles ?? 0) ?? 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-            ) : (
-              <p className="text-sm text-muted-foreground p-4">
-                No vehicle types found.
-              </p>
-            )}
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </div>
-
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {vehicleLoading ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-10">
+                  <TableCell colSpan={6} className="py-10 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
-                      <span>
-                        Loading vehicle
-                      </span>
+                      <span>Loading vehicles</span>
                     </div>
                   </TableCell>
                 </TableRow>
               </TableBody>
             ) : vehicles.length === 0 ? (
-              <>
-                <TableBody>
-                  <TableRow>
-                    <TableCell
-                      colSpan={9}
-                      className="text-center py-10 text-muted-foreground"
-                    >
-                      <EmptyState title="No vehicles found" description="Add a vehicle to get started." />
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                    <EmptyState
+                      title="No vehicles found"
+                      description="Try another filter, or add a vehicle."
+                      action={<Button size="sm" onClick={() => setOpenVehicleForm(true)}>+ Add vehicle</Button>}
+                    />
+                  </TableCell>
+                </TableRow>
+              </TableBody>
             ) : (
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Vehicle ID</TableHead>
-                    <TableHead>Vehicle Name</TableHead>
-                    <TableHead>Vehicle Brand</TableHead>
-                    <TableHead>Plate Number</TableHead>
-                    <TableHead>Capacity</TableHead>
-                    <TableHead>Vehicle Type</TableHead>
-                    <TableHead>Today&apos;s Status</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Plate</TableHead>
+                    <TableHead className="text-right">Seats</TableHead>
+                    <TableHead>Today</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {vehicles.map((vehicle, index) => (
+                  {vehicles.map((vehicle) => (
                     <TableRow
                       key={vehicle.vehicle_id}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        // The action menu renders in a portal; ignore its clicks.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setSelectedVehicle(vehicle);
+                        setOpenVehicle(true);
+                      }}
                     >
-                      <TableCell className="font-medium">
-                        {index + 1 + (page - 1) * limit}
+                      <TableCell>
+                        <p className="font-medium">{vehicle.vehicle_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {vehicle.vehicle_brand || "—"} · <span className="font-mono">{vehicle.vehicle_id}</span>
+                        </p>
                       </TableCell>
-
-                      <TableCell className="font-medium">
-                        {vehicle.vehicle_id}
-                      </TableCell>
-
-                      <TableCell>{vehicle.vehicle_name}</TableCell>
-
-                      <TableCell>{vehicle.vehicle_brand}</TableCell>
-
-                      <TableCell>{vehicle.plate_number}</TableCell>
-
-                      <TableCell>{vehicle.capacity ?? "—"}</TableCell>
-
-                      <TableCell>{vehicleTypeMap[vehicle.vehicle_type] ?? vehicle.vehicle_type}</TableCell>
 
                       <TableCell>
-                        <span className={vehicleToday(vehicle).tone}>
-                          {vehicleToday(vehicle).label}
+                        <span className="inline-flex rounded border border-border bg-neutral-50 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                          {vehicleTypeMap[vehicle.vehicle_type] ?? vehicle.vehicle_type}
                         </span>
+                      </TableCell>
+
+                      <TableCell>
+                        {vehicle.plate_number ? (
+                          <span className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wider">
+                            {vehicle.plate_number}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="text-right tabular-nums">{vehicle.capacity ?? "—"}</TableCell>
+
+                      <TableCell>
+                        <TodayPill {...vehicleToday(vehicle)} />
                       </TableCell>
 
                       <TableCell>
@@ -1038,152 +946,102 @@ export default function VehiclePage() {
       </div>
 
       <Sheet open={openVehicleForm} onOpenChange={setOpenVehicleForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add New Vehicle
+              New vehicle
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in vehicle details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            {/* Vehicle Name */}
-            <div className="flex flex-col gap-1">
-              <label>Vehicle Name</label>
-              <Input
-                placeholder="Vehicle Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={vehicleForm.name}
-                onChange={(e) =>
-                  setVehicleForm({ ...vehicleForm, name: e.target.value })
-                }
-              />
-            </div>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Vehicle" hint="How it appears when users book a trip.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Name</FieldLabel>
+                  <Input
+                    placeholder="e.g. Service Van 1"
+                    value={vehicleForm.name}
+                    onChange={(e) => setVehicleForm({ ...vehicleForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Brand</FieldLabel>
+                  <Input
+                    placeholder="e.g. Toyota Hiace"
+                    value={vehicleForm.vehicle_brand}
+                    onChange={(e) => setVehicleForm({ ...vehicleForm, vehicle_brand: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
 
-            {/* Vehicle Brand */}
-            <div className="flex flex-col gap-1">
-              <label>Brand</label>
-              <Input
-                placeholder="Vehicle Brand"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={vehicleForm.vehicle_brand}
-                onChange={(e) =>
-                  setVehicleForm({
-                    ...vehicleForm,
-                    vehicle_brand: e.target.value,
-                  })
-                }
-              />
-            </div>
+            <FormSection step={2} title="Registration and seats" hint="Seats is how many passengers it can take.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Plate number</FieldLabel>
+                  <Input
+                    placeholder="e.g. ABC 1234"
+                    value={vehicleForm.plate_number}
+                    onChange={(e) => setVehicleForm({ ...vehicleForm, plate_number: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Seats</FieldLabel>
+                  <Input type="number" min={1}
+                    placeholder="e.g. 12"
+                    value={vehicleForm.capacity}
+                    onChange={(e) => setVehicleForm({ ...vehicleForm, capacity: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
 
-            {/* Vehicle Number */}
-            <div className="flex flex-col gap-1">
-              <label>Plate Number</label>
-              <Input
-                placeholder="e.g. ABC 1234"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={vehicleForm.plate_number}
-                onChange={(e) =>
-                  setVehicleForm({
-                    ...vehicleForm,
-                    plate_number: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-
-            {/* Capacity */}
-            <div className="flex flex-col gap-1">
-              <label>Capacity</label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="Number of passengers"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={vehicleForm.capacity}
-                onChange={(e) =>
-                  setVehicleForm({
-                    ...vehicleForm,
-                    capacity: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Vehicle Type */}
-            <div className="flex flex-col gap-1">
-              <label>Vehicle Type</label>
-
-              <Select
-                value={vehicleForm.vehicle_type}
-                onValueChange={(value) =>
-                  setVehicleForm({
-                    ...vehicleForm,
-                    vehicle_type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select Vehicle Type" />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Vehicle Type</SelectLabel>
-                  {vehicleTypeData?.data?.map((type: any) => (
-                    <SelectItem
-                      key={type.type_id}
-                      value={type.type_id}
-                    >
-                      {type.type}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Vehicle Status */}
-            <div className="flex flex-col gap-1">
-              <label>Vehicle Status</label>
-
-              <Select value={vehicleForm.status} onValueChange={(value) =>
-                setVehicleForm({
-                  ...vehicleForm,
-                  status: value,
-                })
-              }>
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <SelectValue placeholder={"Status"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                    <SelectLabel>Status</SelectLabel>
-                    <SelectItem value="AVAILABLE">Available</SelectItem>
-                    <SelectItem value="IN_USE">In Use</SelectItem>
-                    <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection step={3} title="Type and status" hint="">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Vehicle type</FieldLabel>
+                <Select value={vehicleForm.vehicle_type} onValueChange={(value) => setVehicleForm({ ...vehicleForm, vehicle_type: value })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {(vehicleTypeData?.data ?? [])
+                        .filter((t: any) => !t.deletedAt)
+                        .map((t: any) => (
+                          <SelectItem key={t.type_id} value={t.type_id}>
+                            {t.type}
+                          </SelectItem>
+                        ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Status</FieldLabel>
+                <Segmented
+                  value={vehicleForm.status as "AVAILABLE" | "IN_USE" | "MAINTENANCE"}
+                  onChange={(v) => setVehicleForm({ ...vehicleForm, status: v })}
+                  options={[{ value: "AVAILABLE", label: "Available" }, { value: "IN_USE", label: "In use" }, { value: "MAINTENANCE", label: "Maintenance" }]}
+                />
+              </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleCreateVehicle}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Create Vehicle
+              Add vehicle
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1193,23 +1051,23 @@ export default function VehiclePage() {
       </Sheet>
 
       <Sheet open={openTypeForm} onOpenChange={setOpenTypeForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add New Vehicle Type
+              New vehicle type
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in vehicle type details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <div className="flex flex-col">
-              <label>Type Name</label>
+          <div className="flex flex-col gap-4 p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type Name</label>
               <Input
                 type="name"
                 placeholder="Vehicle Type Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className=""
                 value={typeForm.name}
                 onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })}
               />
@@ -1219,7 +1077,7 @@ export default function VehiclePage() {
           <SheetFooter>
             <Button
               onClick={handleCreateVehicleType}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Create Vehicle Type
             </Button>
@@ -1227,7 +1085,7 @@ export default function VehiclePage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1237,82 +1095,41 @@ export default function VehiclePage() {
       </Sheet>
 
       <Sheet open={openVehicle} onOpenChange={setOpenVehicle}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Vehicle Detail
+              Vehicle
             </SheetTitle>
             <SheetDescription className="text-white">
               Review vehicle details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
-              Vehicle ID: {selectedVehicle?.vehicle_id}
-            </label>
-
-            <div className="flex flex-col">
-              <label>Vehicle Name</label>
-              <Input
-                value={selectedVehicle?.vehicle_name ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+          <div className="flex flex-col gap-5 p-4">
+            <div className="rounded-lg border border-border bg-neutral-50 p-4">
+              <p className="font-mono text-[11px] text-muted-foreground">{selectedVehicle?.vehicle_id}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedVehicle?.vehicle_name}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                {selectedVehicle?.plate_number && (
+                  <span className="rounded border border-neutral-300 bg-white px-1.5 py-0.5 font-mono text-xs font-semibold tracking-wider">
+                    {selectedVehicle.plate_number}
+                  </span>
+                )}
+                {selectedVehicle && <TodayPill {...vehicleToday(selectedVehicle)} />}
+              </div>
             </div>
-
-            <div className="flex flex-col">
-              <label>Brand</label>
-              <Input
-                value={selectedVehicle?.vehicle_brand ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
+            <DetailGrid>
+              <DetailItem label="Brand" value={selectedVehicle?.vehicle_brand} />
+              <DetailItem
+                label="Type"
+                value={selectedVehicle ? vehicleTypeMap[selectedVehicle.vehicle_type] ?? selectedVehicle.vehicle_type : ""}
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Plate Number</label>
-              <Input
-                value={selectedVehicle?.plate_number ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
+              <DetailItem label="Seats" value={selectedVehicle?.capacity != null ? String(selectedVehicle.capacity) : ""} />
+              <DetailItem
+                label="Status"
+                value={{ AVAILABLE: "Available", IN_USE: "In use", MAINTENANCE: "Maintenance" }[selectedVehicle?.status ?? ""] ?? selectedVehicle?.status}
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Capacity</label>
-              <Input
-                value={
-                  selectedVehicle?.capacity != null
-                    ? String(selectedVehicle.capacity)
-                    : ""
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Vehicle Type</label>
-              <Input
-                value={
-                  selectedVehicle
-                    ? vehicleTypeMap[selectedVehicle.vehicle_type] ?? selectedVehicle.vehicle_type
-                    : ""
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Vehicle Status</label>
-              <Input
-                value={selectedVehicle?.status ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
+            </DetailGrid>
           </div>
 
           <SheetFooter>
@@ -1334,18 +1151,18 @@ export default function VehiclePage() {
                 }
                 setOpenVehicleEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Edit Vehicle
+              Edit
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="destructive"
                 onClick={() => setOpenVehicleDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
-                Delete Vehicle
+                Delete
               </Button>
             </SheetClose>
           </SheetFooter>
@@ -1353,10 +1170,10 @@ export default function VehiclePage() {
       </Sheet>
 
       <Sheet open={openType} onOpenChange={setOpenType}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Vehicle Type Detail
+              Vehicle type
             </SheetTitle>
             <SheetDescription className="text-white">
               Review vehicle type details below.
@@ -1364,17 +1181,13 @@ export default function VehiclePage() {
           </SheetHeader>
 
           <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
+            <label className="font-mono text-xs text-muted-foreground">
               Type ID: {selectedType?.type_id}
             </label>
 
-            <div className="flex flex-col">
-              <label>Type Name</label>
-              <Input
-                value={selectedType?.type ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type Name</label>
+              <p className="text-sm font-medium">{(selectedType?.type ?? "") || "—"}</p>
             </div>
           </div>
 
@@ -1389,7 +1202,7 @@ export default function VehiclePage() {
                 }
                 setOpenTypeEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Edit Type
             </Button>
@@ -1398,7 +1211,7 @@ export default function VehiclePage() {
               <Button
                 variant="destructive"
                 onClick={() => setOpenTypeDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Delete Type
               </Button>
@@ -1408,130 +1221,94 @@ export default function VehiclePage() {
       </Sheet>
 
       <Sheet open={openVehicleEditForm} onOpenChange={setOpenVehicleEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Vehicle Detail
+              Edit vehicle
             </SheetTitle>
             <SheetDescription className="text-white">
               Update vehicle details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
-              Vehicle ID: {selectedVehicle?.vehicle_id}
-            </label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Vehicle" hint="How it appears when users book a trip.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Name</FieldLabel>
+                  <Input
+                    placeholder="e.g. Service Van 1"
+                    value={editVehicleForm.name}
+                    onChange={(e) => setEditVehicleForm({ ...editVehicleForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Brand</FieldLabel>
+                  <Input
+                    placeholder="e.g. Toyota Hiace"
+                    value={editVehicleForm.vehicle_brand}
+                    onChange={(e) => setEditVehicleForm({ ...editVehicleForm, vehicle_brand: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Name</label>
-              <Input
-                value={editVehicleForm.name}
-                onChange={(e) =>
-                  setEditVehicleForm({ ...editVehicleForm, name: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
+            <FormSection step={2} title="Registration and seats" hint="Seats is how many passengers it can take.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Plate number</FieldLabel>
+                  <Input
+                    placeholder="e.g. ABC 1234"
+                    value={editVehicleForm.plate_number}
+                    onChange={(e) => setEditVehicleForm({ ...editVehicleForm, plate_number: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Seats</FieldLabel>
+                  <Input type="number" min={1}
+                    placeholder="e.g. 12"
+                    value={editVehicleForm.capacity}
+                    onChange={(e) => setEditVehicleForm({ ...editVehicleForm, capacity: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Vehicle Brand</label>
-              <Input
-                value={editVehicleForm.vehicle_brand}
-                onChange={(e) =>
-                  setEditVehicleForm({ ...editVehicleForm, vehicle_brand: e.target.value })  
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Plate Number</label>
-              <Input
-                value={editVehicleForm.plate_number}
-                onChange={(e) =>
-                  setEditVehicleForm({ ...editVehicleForm, plate_number: e.target.value }) 
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Capacity</label>
-              <Input
-                type="number"
-                min={1}
-                placeholder="Number of passengers"
-                value={editVehicleForm.capacity}
-                onChange={(e) =>
-                  setEditVehicleForm({
-                    ...editVehicleForm,
-                    capacity: e.target.value,
-                  })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Vehicle Type</label>
-
-              <Select
-                value={editVehicleForm.vehicle_type}
-                onValueChange={(value) =>
-                  setEditVehicleForm({
-                    ...editVehicleForm,
-                    vehicle_type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select Vehicle Type" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {vehicleTypeData?.data?.map((type: any) => (
-                    <SelectItem
-                      key={type.type_id}
-                      value={type.type_id}
-                    >
-                      {type.type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Vehicle Status */}
-            <div className="flex flex-col gap-1">
-              <label>Vehicle Status</label>
-
-              <Select value={editVehicleForm.status} onValueChange={(value) =>
-                setEditVehicleForm({
-                  ...editVehicleForm,
-                  status: value,
-                })
-              }>
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <SelectValue placeholder={"Status"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                    <SelectLabel>Status</SelectLabel>
-                    <SelectItem value="AVAILABLE">Available</SelectItem>
-                    <SelectItem value="IN_USE">In Use</SelectItem>
-                    <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            <FormSection step={3} title="Type and status" hint="">
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Vehicle type</FieldLabel>
+                <Select value={editVehicleForm.vehicle_type} onValueChange={(value) => setEditVehicleForm({ ...editVehicleForm, vehicle_type: value })}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select a type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {(vehicleTypeData?.data ?? [])
+                        .filter((t: any) => !t.deletedAt)
+                        .map((t: any) => (
+                          <SelectItem key={t.type_id} value={t.type_id}>
+                            {t.type}
+                          </SelectItem>
+                        ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Status</FieldLabel>
+                <Segmented
+                  value={editVehicleForm.status as "AVAILABLE" | "IN_USE" | "MAINTENANCE"}
+                  onChange={(v) => setEditVehicleForm({ ...editVehicleForm, status: v })}
+                  options={[{ value: "AVAILABLE", label: "Available" }, { value: "IN_USE", label: "In use" }, { value: "MAINTENANCE", label: "Maintenance" }]}
+                />
+              </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleUpdateVehicle}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Vehicle
             </Button>
@@ -1539,7 +1316,7 @@ export default function VehiclePage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1549,29 +1326,29 @@ export default function VehiclePage() {
       </Sheet>
 
       <Sheet open={openTypeEditForm} onOpenChange={setOpenTypeEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Vehicle Type
+              Edit vehicle type
             </SheetTitle>
             <SheetDescription className="text-white">
               Update vehicle type details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
+          <div className="flex flex-col gap-4 p-4">
+            <label className="font-mono text-xs text-muted-foreground">
               Vehicle Type ID: {selectedType?.type_id}
             </label>
 
-            <div className="flex flex-col">
-              <label>Name</label>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Name</label>
               <Input
                 value={editTypeForm.name}
                 onChange={(e) =>
                   setEditTypeForm({ ...editTypeForm, name: e.target.value })
                 }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className=""
               />
             </div>
           </div>
@@ -1579,7 +1356,7 @@ export default function VehiclePage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateVehicleType}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Vehicle Type
             </Button>
@@ -1587,7 +1364,7 @@ export default function VehiclePage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>

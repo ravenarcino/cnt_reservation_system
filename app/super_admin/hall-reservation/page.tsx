@@ -1,5 +1,10 @@
 "use client";
 
+import { formatDistanceToNow } from "date-fns";
+import { StatusSummary } from "@/components/booking/status-summary";
+import { DetailGrid, DetailHeader, DetailItem, StatusSteps } from "@/components/booking/detail-parts";
+import { Person } from "@/components/dashboard/admin-tables";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -866,6 +871,15 @@ export default function ReservationPage() {
         </div>
       </div>
 
+      <StatusSummary
+        statuses={allReservations.map((r) => r.status)}
+        active={reservationStatus}
+        onSelect={(st) => {
+          setReservationStatus(st);
+          setPage(1);
+        }}
+      />
+
       <div className="flex flex-col lg:flex-row gap-3">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -928,13 +942,14 @@ export default function ReservationPage() {
               <SelectItem value="CANCELLED">Cancelled</SelectItem>
               <SelectItem value="FOR_APPROVAL">For Approval</SelectItem>
               <SelectItem value="FOR_REVIEW">For Review</SelectItem>
+              <SelectItem value="DONE">Done</SelectItem>
             </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {reservationLoading ? (
               <TableBody>
@@ -962,73 +977,68 @@ export default function ReservationPage() {
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Reservation ID</TableHead>
-                    <TableHead>Purpose</TableHead>
-                    <TableHead>Hall Type</TableHead>
-                    <TableHead>Hall</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Time</TableHead>
-                    <TableHead>Attendees</TableHead>
+                    <TableHead>Requester</TableHead>
+                    <TableHead>Request</TableHead>
+                    <TableHead>Venue</TableHead>
+                    <TableHead>Schedule</TableHead>
+                    <TableHead className="text-right">Pax</TableHead>
+                    <TableHead>Filed</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {reservations.map((reservation, index) => {
+                  {reservations.map((reservation) => {
                     const actions = getAvailableActions(reservation.status);
 
                     return (
-                      <TableRow key={reservation.reservation_id}>
-                        <TableCell className="font-medium">
-                          {index + 1 + (currentPage - 1) * limit}
-                        </TableCell>
-
-                        <TableCell className="font-medium">
-                          {reservation.reservation_id}
-                        </TableCell>
-
-                        <TableCell className="max-w-[20px] truncate">
-                          {reservation.purpose}
-                        </TableCell>
-
+                      <TableRow
+                        key={reservation.reservation_id}
+                        className="cursor-pointer"
+                        onClick={(e) => {
+                          // The action menu renders in a portal; ignore its clicks.
+                          if (!e.currentTarget.contains(e.target as Node)) return;
+                          if ((e.target as HTMLElement).closest("button")) return;
+                          setSelectedReservation(reservation);
+                          setOpenReservation(true);
+                        }}
+                      >
                         <TableCell>
-                          {hallTypeData?.data?.find(
-                            (t: { type_id: string; type: string }) =>
-                              t.type_id === reservation.hall_type,
-                          )?.type ?? reservation.hall_type}
+                          <Person
+                            name={reservation.hall_user?.name}
+                            sub={(reservation.hall_user as { department?: string } | null)?.department}
+                          />
                         </TableCell>
 
-                        <TableCell>
-                          {reservation.hall.map((h) => h.hall_name).join(", ")}
+                        <TableCell className="max-w-[240px]">
+                          <p className="truncate font-medium">{reservation.purpose}</p>
+                          <p className="font-mono text-xs text-muted-foreground">{reservation.reservation_id}</p>
                         </TableCell>
 
-                        <TableCell>
-                          {new Date(
-                            reservation.date_appointment,
-                          ).toLocaleDateString()}
+                        <TableCell className="max-w-[200px]">
+                          <p className="truncate">{reservation.hall.map((h) => h.hall_name).join(", ") || "—"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {hallTypeData?.data?.find(
+                              (t: { type_id: string; type: string }) => t.type_id === reservation.hall_type,
+                            )?.type ?? reservation.hall_type}
+                          </p>
                         </TableCell>
 
-                        <TableCell>
-                          {new Date(reservation.time_from).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}{" "}
-                          –{" "}
-                          {new Date(reservation.time_to).toLocaleTimeString(
-                            [],
-                            {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}
+                        <TableCell className="whitespace-nowrap">
+                          <p className="font-medium">{format(new Date(reservation.date_appointment), "EEE, MMM d, yyyy")}</p>
+                          <p className="text-xs tabular-nums text-muted-foreground">
+                            {format(new Date(reservation.time_from), "h:mm a")} – {format(new Date(reservation.time_to), "h:mm a")}
+                          </p>
                         </TableCell>
 
-                        <TableCell>{reservation.attendees_qty}</TableCell>
+                        <TableCell className="text-right tabular-nums">{reservation.attendees_qty}</TableCell>
+
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {reservation.createdAt
+                            ? formatDistanceToNow(new Date(reservation.createdAt), { addSuffix: true })
+                            : "—"}
+                        </TableCell>
 
                         <TableCell>
                           <StatusBadge status={reservation.status} />
@@ -1203,175 +1213,78 @@ export default function ReservationPage() {
 
           return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-              <Card className="w-full max-w-xl max-h-[85vh] overflow-y-auto relative">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="absolute right-3 top-3 h-8 w-8 rounded-full"
-                  onClick={() => setOpenReservation(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
+              <Card className="relative w-full max-w-2xl max-h-[88vh] gap-0 overflow-y-auto py-0">
+                <DetailHeader
+                  kind="Hall reservation"
+                  reference={selectedReservation.reservation_id}
+                  title={selectedReservation.purpose}
+                  status={selectedReservation.status}
+                  onClose={() => setOpenReservation(false)}
+                />
 
-                <CardHeader>
-                  <CardTitle>Reservation Detail</CardTitle>
-                  <CardDescription>
-                    Reservation ID: {selectedReservation.reservation_id}
-                  </CardDescription>
-                </CardHeader>
-
-                <CardContent className="flex flex-col gap-3">
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Reserved By
-                    </label>
-                    <p className="font-medium">
-                      {selectedReservation.hall_user?.name ?? "—"}
-                    </p>
+                <div className="flex flex-col gap-5 p-5">
+                  <div className="rounded-md border border-border bg-neutral-50 px-4 py-3">
+                    <StatusSteps status={selectedReservation.status} />
                   </div>
 
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Purpose
-                    </label>
-                    <p className="font-medium">{selectedReservation.purpose}</p>
+                  <div className="flex items-center justify-between rounded-md border border-border p-3">
+                    <Person
+                      name={selectedReservation.hall_user?.name}
+                      sub={(selectedReservation.hall_user as { department?: string; email?: string } | null)?.email}
+                    />
+                    <span className="text-xs text-muted-foreground">
+                      {selectedReservation.createdAt
+                        ? `Filed ${formatDistanceToNow(new Date(selectedReservation.createdAt), { addSuffix: true })}`
+                        : ""}
+                    </span>
                   </div>
 
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Hall Type
-                    </label>
-                    <p className="font-medium">
-                      {hallTypeData?.data?.find(
-                        (t: { type_id: string; type: string }) =>
-                          t.type_id === selectedReservation.hall_type,
-                      )?.type ?? selectedReservation.hall_type}
-                    </p>
-                  </div>
+                  <DetailGrid>
+                    <DetailItem label="Date" value={format(new Date(selectedReservation.date_appointment), "EEEE, MMM d, yyyy")} />
+                    <DetailItem
+                      label="Time"
+                      value={`${format(new Date(selectedReservation.time_from), "h:mm a")} – ${format(new Date(selectedReservation.time_to), "h:mm a")}`}
+                    />
+                    <DetailItem label="Hall" value={selectedReservation.hall?.map((h) => h.hall_name).join(", ")} />
+                    <DetailItem
+                      label="Hall type"
+                      value={
+                        hallTypeData?.data?.find(
+                          (t: { type_id: string; type: string }) => t.type_id === selectedReservation.hall_type,
+                        )?.type ?? selectedReservation.hall_type
+                      }
+                    />
+                    <DetailItem label="Attendees" value={String(selectedReservation.attendees_qty)} />
+                    <DetailItem
+                      label="Equipment"
+                      value={
+                        selectedReservation.equipment?.length
+                          ? selectedReservation.equipment.map((e) => e.item_name).join(", ")
+                          : "None"
+                      }
+                    />
+                    <DetailItem wide label="Other request" value={selectedReservation.other_request || "None"} />
+                  </DetailGrid>
 
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Hall
-                    </label>
-                    <p className="font-medium">
-                      {selectedReservation.hall
-                        ?.map((h) => h.hall_name)
-                        .join(", ") ?? "—"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Equipment
-                    </label>
-                    <p className="font-medium">
-                      {selectedReservation.equipment &&
-                      selectedReservation.equipment.length > 0
-                        ? selectedReservation.equipment
-                            .map((e) => e.item_name)
-                            .join(", ")
-                        : "None"}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground">
-                        Date
-                      </label>
-                      <p className="font-medium">
-                        {new Date(
-                          selectedReservation.date_appointment,
-                        ).toLocaleDateString()}
-                      </p>
+                  {cancellationLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading cancellation info...</p>
+                  ) : cancellationData?.cancellation ? (
+                    <div className="rounded-md border border-orange-200 bg-orange-50 p-4 text-sm">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-orange-800">Cancellation request</p>
+                      <p className="mt-1.5">{cancellationData.cancellation.reason}</p>
+                      <a
+                        href={`/api/uploads/cancellations/${cancellationData.cancellation.path.split("/").pop()}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-block text-xs font-medium text-brand underline"
+                      >
+                        View proof: {cancellationData.cancellation.file_name}
+                      </a>
                     </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">
-                        Attendees
-                      </label>
-                      <p className="font-medium">
-                        {selectedReservation.attendees_qty}
-                      </p>
-                    </div>
-                  </div>
+                  ) : null}
+                </div>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-xs text-muted-foreground">
-                        Time From
-                      </label>
-                      <p className="font-medium">
-                        {new Date(
-                          selectedReservation.time_from,
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                    <div>
-                      <label className="text-xs text-muted-foreground">
-                        Time To
-                      </label>
-                      <p className="font-medium">
-                        {new Date(
-                          selectedReservation.time_to,
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Other Request
-                    </label>
-                    <p className="font-medium">
-                      {selectedReservation.other_request || "—"}
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Status
-                    </label>
-                    <p className="font-medium">{selectedReservation.status}</p>
-                  </div>
-
-                  <div>
-                    {cancellationLoading ? (
-                      <p className="text-sm text-muted-foreground">
-                        Loading cancellation info...
-                      </p>
-                    ) : cancellationData?.cancellation ? (
-                      <>
-                        <label className="text-xs text-muted-foreground">
-                          Cancellation Reason
-                        </label>
-                        <p className="font-medium">
-                          {cancellationData.cancellation.reason}
-                        </p>
-
-                        <label className="text-xs text-muted-foreground mt-2 block">
-                          Proof
-                        </label>
-
-                        <a
-                          href={`/api/uploads/cancellations/${cancellationData.cancellation.path.split("/").pop()}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 underline text-sm font-medium"
-                        >
-                          {cancellationData.cancellation.file_name}
-                        </a>
-                      </>
-                    ) : null}
-                  </div>
-                </CardContent>
-
-                <div className="flex flex-col gap-2 p-4 pt-0">
+                <div className="flex flex-col gap-2 border-t border-border p-5">
                   {(() => {
                     // Buttons are hidden, not just dimmed, so the card only
                     // offers what this status actually allows. `actions` comes
@@ -1382,13 +1295,13 @@ export default function ReservationPage() {
 
                     const deleteButton = (
                       <Button
-                        className="w-full lg:w-20 bg-red-600 rounded-sm py-5 text-white font-medium"
+                        className="w-full lg:w-10 h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
                         onClick={() => {
                           setSelectedReservation(selectedReservation);
                           setOpenReservationDialog(true);
                         }}
                       >
-                        <Trash className="h-4 w-4 text-white" />
+                        <Trash className="h-4 w-4" />
                         <p className="block lg:hidden">Delete</p>
                       </Button>
                     );
@@ -1397,7 +1310,7 @@ export default function ReservationPage() {
                       actions.approve && (
                         <Button
                           key="approve"
-                          className="w-full lg:flex-1 bg-green-600 rounded-sm py-5 text-white font-medium"
+                          className="w-full lg:flex-1 h-10 bg-emerald-600 text-white hover:bg-emerald-700"
                           disabled={!actionable}
                           onClick={() => {
                             setOpenActionDialog(true);
@@ -1410,7 +1323,7 @@ export default function ReservationPage() {
                       actions.decline && (
                         <Button
                           key="decline"
-                          className="w-full lg:flex-1 bg-red-600 rounded-sm py-5 text-white font-medium"
+                          className="w-full lg:flex-1 h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
                           disabled={!actionable}
                           onClick={() => {
                             setOpenActionDialog(true);
@@ -1423,7 +1336,7 @@ export default function ReservationPage() {
                       actions.cancel && (
                         <Button
                           key="cancel"
-                          className="w-full lg:flex-1 bg-yellow-600 rounded-sm py-5 text-white font-medium"
+                          className="w-full lg:flex-1 h-10 border border-border bg-white text-foreground hover:bg-neutral-50"
                           disabled={!actionable}
                           onClick={() => {
                             setOpenActionDialog(true);
@@ -1440,7 +1353,7 @@ export default function ReservationPage() {
                         {actions.edit && (
                           <div className="flex flex-col lg:flex-row gap-2">
                             <Button
-                              className="w-full lg:flex-1 bg-brand rounded-sm py-5 text-white font-medium"
+                              className="w-full lg:flex-1 h-10"
                               disabled={!actionable}
                               onClick={() => {
                                 setOpenReservation(false);
@@ -1493,13 +1406,13 @@ export default function ReservationPage() {
                         {/* Nothing left to act on - Delete stands alone. */}
                         {!actions.edit && statusButtons.length === 0 && (
                           <Button
-                            className="w-full bg-red-600 rounded-sm py-5 text-white font-medium"
+                            className="w-full h-10 border border-red-200 bg-white text-red-600 hover:bg-red-50"
                             onClick={() => {
                               setSelectedReservation(selectedReservation);
                               setOpenReservationDialog(true);
                             }}
                           >
-                            <Trash className="h-4 w-4 text-white" />
+                            <Trash className="h-4 w-4" />
                             <p className="ml-2">Delete</p>
                           </Button>
                         )}
@@ -1782,13 +1695,35 @@ export default function ReservationPage() {
       <AlertDialog open={openActionDialog} onOpenChange={setOpenActionDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="font-bold">
-              {action} this reservation?
+            <AlertDialogTitle>
+              {action === "Approve"
+                ? "Approve this reservation?"
+                : action === "Decline"
+                  ? selectedReservation?.status === "FOR_REVIEW"
+                    ? "Decline the cancellation request?"
+                    : "Decline this reservation?"
+                  : "Cancel this reservation?"}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
-              This will update the reservation status. This action can`t be
-              undone.
+            <AlertDialogDescription>
+              {action === "Approve"
+                ? "The hall is reserved for the requester and they are notified."
+                : action === "Decline"
+                  ? selectedReservation?.status === "FOR_REVIEW"
+                    ? "The request is rejected and the booking stays as it was."
+                    : "The request is rejected and its equipment is released."
+                  : "The booking is called off and its equipment is released."}
             </AlertDialogDescription>
+            {selectedReservation && (
+              <div className="mt-2 rounded-md border border-border bg-neutral-50 p-3 text-sm">
+                <p className="font-medium">{selectedReservation.purpose}</p>
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono">{selectedReservation.reservation_id}</span> ·{" "}
+                  {selectedReservation.hall?.map((h) => h.hall_name).join(", ")} ·{" "}
+                  {format(new Date(selectedReservation.date_appointment), "MMM d, yyyy")}{" "}
+                  {format(new Date(selectedReservation.time_from), "h:mm a")}
+                </p>
+              </div>
+            )}
           </AlertDialogHeader>
 
           <AlertDialogFooter>
@@ -1799,11 +1734,9 @@ export default function ReservationPage() {
               }}
               disabled={actionLoading}
               className={
-                action === "Decline"
-                  ? "bg-red-600 hover:bg-red-700 text-white"
-                  : action === "Approve"
-                    ? "bg-green-600 hover:bg-green-700 text-white"
-                    : "bg-yellow-600 hover:bg-yellow-700 text-white"
+                action === "Approve"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-red-600 hover:bg-red-700 text-white"
               }
             >
               {actionLoading ? `Processing...` : action}

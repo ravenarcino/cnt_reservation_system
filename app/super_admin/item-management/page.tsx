@@ -1,5 +1,11 @@
 "use client";
 
+import { FormSection, FieldLabel } from "@/components/booking/form-parts";
+import { DetailGrid, DetailItem } from "@/components/booking/detail-parts";
+
+import { FilterStrip, PageHeader, Segmented } from "@/components/management/parts";
+import { TypeChips } from "@/components/management/type-chips";
+
 import { EmptyState } from "@/components/ui/empty-state";
 
 import { useState, useEffect, useMemo } from "react";
@@ -122,7 +128,7 @@ export default function ItemPage() {
     item_brand: "",
     item_number: "",
     item_type: "",
-    status: "",
+    status: "OPEN",
   });
   const [editTypeForm, setEditTypeForm] = useState({
     name: "",
@@ -132,7 +138,7 @@ export default function ItemPage() {
     item_brand: "",
     item_number: "",
     item_type: "",
-    status: "",
+    status: "OPEN",
   });
   const [selectedItem, setSelectedItem] = useState<Item | null>(null);
   const [returningItemId, setReturningItemId] = useState<string | null>(null);
@@ -243,7 +249,7 @@ export default function ItemPage() {
         item_brand: "",
         item_number: "",
         item_type: "",
-        status: "",
+        status: "OPEN",
       });
 
       queryClient.invalidateQueries({
@@ -618,286 +624,184 @@ export default function ItemPage() {
     return map;
   }, [itemTypeData]);
 
+  // Every item (unfiltered) for the summary strip and type counts.
+  const { data: allItemData } = useQuery({
+    queryKey: ["item", "summary"],
+    queryFn: async () => {
+      const res = await fetch("/api/equipments/items/item?limit=500");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error);
+      return json as { data: Item[]; total: number };
+    },
+  });
+  const allItems: Item[] = (allItemData?.data ?? []).filter((i: any) => !i.deletedAt);
+
   const itemCountMap = useMemo(() => {
     const map: Record<string, number> = {};
-
-    (itemData?.data ?? [])
-      .filter((item: any) => !item.deletedAt)
-      .forEach((item: any) => {
-        map[item.item_type] = (map[item.item_type] ?? 0) + 1;
-      });
-
+    allItems.forEach((item) => {
+      map[item.item_type] = (map[item.item_type] ?? 0) + 1;
+    });
     return map;
-  }, [itemData]);
+  }, [allItems]);
 
   return (
     <div className="h-full flex flex-col gap-5">
-      <div className="flex flex-col lg:flex-row items-center justify-between">
-        <div>
-          <h1 className="page-title">Item Management</h1>
-          <p className="text-sm text-muted-foreground text-wrap">
-            Manage IT equipment
-          </p>
-        </div>
-        <div className="flex flex-col lg:flex-row gap-2 w-full lg:w-fit">
-          <Button
-            onClick={() => setOpenTypeForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Item Type
-          </Button>
+      <PageHeader title="Items" count={allItemData?.total ?? totalItems} subtitle="IT equipment users can borrow">
+        <Button onClick={() => setOpenItemForm(true)}>+ Add item</Button>
+      </PageHeader>
 
-          <Button
-            onClick={() => setOpenItemForm(true)}
-            className="w-full lg:w-fit bg-brand text-white px-4 py-4 rounded-sm font-medium "
-          >
-            + Add Item
-          </Button>
-        </div>
-      </div>
-      <div className="flex flex-col lg:flex-row gap-3">
+      <FilterStrip
+        title="Equipment right now"
+        total={allItems.length}
+        active={status}
+        onSelect={(key) => {
+          setStatus(key);
+          setPage(1);
+        }}
+        items={[
+          { key: "OPEN", label: "Available", color: "#10b981", count: allItems.filter((i) => i.status === "OPEN").length },
+          { key: "BORROWED", label: "Borrowed", color: "#f59e0b", count: allItems.filter((i) => i.status === "BORROWED").length },
+        ]}
+      />
+
+      <TypeChips
+        label="Item types"
+        loading={itemTypeLoading}
+        total={allItems.length}
+        active={selectedTypeFilter}
+        onSelect={(id) => {
+          setSelectedTypeFilter(id);
+          setPage(1);
+        }}
+        items={itemTypes
+          .filter((t: any) => !t.deletedAt)
+          .map((t) => ({ id: t.item_id, name: t.type, count: itemCountMap[t.item_id] ?? 0 }))}
+        onAdd={() => setOpenTypeForm(true)}
+        onEdit={(id) => {
+          const t = itemTypes.find((x) => x.item_id === id);
+          if (!t) return;
+          setSelectedType(t);
+          setEditTypeForm({ name: t.type });
+          setOpenTypeEditForm(true);
+        }}
+        onDelete={(id) => {
+          const t = itemTypes.find((x) => x.item_id === id);
+          if (!t) return;
+          setSelectedType(t);
+          setOpenTypeDialog(true);
+        }}
+      />
+
+      <div className="flex flex-col gap-3 lg:flex-row">
         <div className="relative lg:w-full lg:max-w-sm">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-
           <Input
-            placeholder="Search item"
-            className="pl-9 focus-visible:ring-0 focus-visible:ring-offset-0"
+            placeholder="Search by name, brand or serial"
+            className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-
-        <Select
-          value={status}
-          onValueChange={(value) => {
-            setStatus(value);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger className="w-full lg:max-w-48 focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-              <SelectValue placeholder={"Status"} />
+        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1); }}>
+          <SelectTrigger className="w-full lg:max-w-44">
+            <SelectValue placeholder="Status" />
           </SelectTrigger>
-
-          <SelectContent
-              position="popper"
-              sideOffset={4}
-              className="w-fit "
-          >
-          <SelectGroup>
+          <SelectContent position="popper" sideOffset={4} className="w-fit">
+            <SelectGroup>
               <SelectLabel>Status</SelectLabel>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="OPEN">Open</SelectItem>
+              <SelectItem value="all">All statuses</SelectItem>
+              <SelectItem value="OPEN">Available</SelectItem>
               <SelectItem value="BORROWED">Borrowed</SelectItem>
-          </SelectGroup>
+            </SelectGroup>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="w-full max-w-5xl mx-auto space-y-2">
-        {selectedTypeFilter && (
-          <button
-            onClick={() => {
-              setSelectedTypeFilter(null);
-              setPage(1);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground hover:bg-muted transition-colors"
-          >
-            Filtered by{" "}
-            <span className="text-foreground">
-              {itemTypeMap[selectedTypeFilter] ?? selectedTypeFilter}
-            </span>
-            <X className="h-3 w-3" />
-          </button>
-        )}
-
-        <ScrollArea className="w-full whitespace-nowrap">
-          <div className="flex flex-row gap-3 pb-4">
-            {itemTypeLoading ? (
-              Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-44 shrink-0 rounded-xl border p-4 space-y-2"
-                >
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-5 w-24" />
-                  <Skeleton className="h-3 w-full mt-3" />
-                </div>
-              ))
-            ) : itemTypeData?.data?.length ? (
-              itemTypeData.data
-                .filter((item: any) => !item.deletedAt)
-                .map((item: any) => {
-                  const isActive = selectedTypeFilter === item.item_id;
-                  return (
-                    <div
-                      key={item.item_id}
-                      onClick={() => {
-                        setSelectedTypeFilter((prev) =>
-                          prev === item.item_id ? null : item.item_id
-                        );
-                        setPage(1);
-                      }}
-                      className={cn(
-                        "group relative w-44 shrink-0 cursor-pointer rounded-xl border p-4 transition-all",
-                        isActive
-                          ? "border-brand bg-brand-soft shadow-sm"
-                          : "hover:border-foreground/20 hover:shadow-sm"
-                      )}
-                    >
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => e.stopPropagation()}
-                            className="absolute top-1.5 right-1.5 h-6 w-6 opacity-0 transition-opacity group-hover:opacity-100 data-[state=open]:opacity-100"
-                          >
-                            <Ellipsis className="h-3.5 w-3.5" />
-                          </Button>
-                        </DropdownMenuTrigger>
-
-                        <DropdownMenuContent
-                          align="end"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <DropdownMenuGroup>
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setSelectedType(item);
-                                setEditTypeForm({
-                                  name: item.type,
-                                });
-                                setOpenTypeEditForm(true);
-                              }}
-                            >
-                              Edit
-                            </DropdownMenuItem>
-
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => {
-                                setSelectedType(item);
-                                setOpenTypeDialog(true);
-                              }}
-                            >
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <div className="pr-6">
-                        <span
-                          className={cn(
-                            "font-mono text-[11px] tracking-tight",
-                            isActive
-                              ? "text-brand"
-                              : "text-muted-foreground"
-                          )}
-                        >
-                          {item.item_id}
-                        </span>
-
-                        <p className="mt-1 text-[15px] font-semibold leading-tight">
-                          {item.type}
-                        </p>
-
-                        <div className="mt-3 flex items-center justify-between border-t pt-2">
-                          <span className="text-xs text-muted-foreground">
-                            Items
-                          </span>
-
-                          <span
-                            className={cn(
-                              "rounded-md px-2 py-0.5 text-xs font-semibold",
-                              isActive
-                                ? "bg-brand text-white"
-                                : "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                            )}
-                          >
-                            {itemCountMap[item.item_id] ?? 0}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-            ) : (
-              <p className="text-sm text-muted-foreground p-4">
-                No equipment types found.
-              </p>
-            )}
-          </div>
-          <ScrollBar orientation="horizontal" />
-        </ScrollArea>
-      </div>
-
       <div className="flex h-full flex-col">
-        <div className="flex-1 overflow-auto rounded-md border">
+        <div className="flex-1 overflow-auto rounded-lg border border-border bg-white">
           <Table>
             {itemLoading ? (
               <TableBody>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-10">
+                  <TableCell colSpan={5} className="py-10 text-center">
                     <div className="flex items-center justify-center gap-2 text-muted-foreground">
                       <Spinner />
-                      <span>
-                        Loading item
-                      </span>
+                      <span>Loading items</span>
                     </div>
                   </TableCell>
                 </TableRow>
               </TableBody>
             ) : items.length === 0 ? (
-              <>
-                <TableBody>
-                  <TableRow>
-                    <TableCell
-                      colSpan={8}
-                      className="text-center py-10 text-muted-foreground"
-                    >
-                      <EmptyState title="No items found" description="Add an item to get started." />
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </>
+              <TableBody>
+                <TableRow>
+                  <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                    <EmptyState
+                      title="No items found"
+                      description="Try another filter, or add an item."
+                      action={<Button size="sm" onClick={() => setOpenItemForm(true)}>+ Add item</Button>}
+                    />
+                  </TableCell>
+                </TableRow>
+              </TableBody>
             ) : (
               <>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>No.</TableHead>
-                    <TableHead>Item ID</TableHead>
-                    <TableHead>Item Name</TableHead>
-                    <TableHead>Item Brand</TableHead>
-                    <TableHead>Item Serial Number</TableHead>
-                    <TableHead>Item Type</TableHead>
+                    <TableHead>Item</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Serial no.</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Action</TableHead>
+                    <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
 
                 <TableBody>
-                  {items.map((item, index) => (
+                  {items.map((item) => (
                     <TableRow
                       key={item.item_id}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        // The action menu renders in a portal; ignore its clicks.
+                        if (!e.currentTarget.contains(e.target as Node)) return;
+                        if ((e.target as HTMLElement).closest("button")) return;
+                        setSelectedItem(item);
+                        setOpenItem(true);
+                      }}
                     >
-                      <TableCell className="font-medium">
-                        {index + 1 + (page - 1) * limit}
+                      <TableCell>
+                        <p className="font-medium">{item.item_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {item.item_brand || "—"} · <span className="font-mono">{item.item_id}</span>
+                        </p>
                       </TableCell>
 
-                      <TableCell className="font-medium">
-                        {item.item_id}
+                      <TableCell>
+                        <span className="inline-flex rounded border border-border bg-neutral-50 px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                          {itemTypeMap[item.item_type] ?? item.item_type}
+                        </span>
                       </TableCell>
 
-                      <TableCell>{item.item_name}</TableCell>
+                      <TableCell>
+                        {item.item_number ? (
+                          <span className="font-mono text-xs">{item.item_number}</span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
 
-                      <TableCell>{item.item_brand}</TableCell>
-
-                      <TableCell>{item.item_number}</TableCell>
-
-                      <TableCell>{itemTypeMap[item.item_type] ?? item.item_type}</TableCell>
-
-                      <TableCell>{item.status === "OPEN" ? "Open" : "Borrowed"}</TableCell>
+                      <TableCell>
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                            item.status === "OPEN"
+                              ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                              : "bg-amber-50 text-amber-800 ring-amber-200",
+                          )}
+                        >
+                          <span className={cn("h-1.5 w-1.5 rounded-full", item.status === "OPEN" ? "bg-emerald-500" : "bg-amber-500")} />
+                          {item.status === "OPEN" ? "Available" : "Borrowed"}
+                        </span>
+                      </TableCell>
 
                       <TableCell>
                         <DropdownMenu>
@@ -907,7 +811,7 @@ export default function ItemPage() {
                             </Button>
                           </DropdownMenuTrigger>
 
-                          <DropdownMenuContent className="">
+                          <DropdownMenuContent align="end">
                             <DropdownMenuGroup>
                               <DropdownMenuItem
                                 onClick={() => {
@@ -939,11 +843,12 @@ export default function ItemPage() {
                                   disabled={returningItemId === item.item_id}
                                   onClick={() => handleReturnItem(item)}
                                 >
-                                  Returned
+                                  Mark returned
                                 </DropdownMenuItem>
                               )}
 
                               <DropdownMenuItem
+                                variant="destructive"
                                 onClick={() => {
                                   setSelectedItem(item);
                                   setOpenItemDialog(true);
@@ -996,132 +901,91 @@ export default function ItemPage() {
       </div>
 
       <Sheet open={openItemForm} onOpenChange={setOpenItemForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add New Item
+              New item
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in item details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            {/* Item Name */}
-            <div className="flex flex-col gap-1">
-              <label>Item Name</label>
-              <Input
-                placeholder="Item Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={itemForm.name}
-                onChange={(e) =>
-                  setItemForm({ ...itemForm, name: e.target.value })
-                }
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Item" hint="What users see when they borrow it.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Name</FieldLabel>
+                  <Input
+                    placeholder="e.g. Projector"
+                    value={itemForm.name}
+                    onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Brand</FieldLabel>
+                  <Input
+                    placeholder="e.g. Epson"
+                    value={itemForm.item_brand}
+                    onChange={(e) => setItemForm({ ...itemForm, item_brand: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection step={2} title="Identification" hint="The serial number helps tell identical items apart.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Serial number</FieldLabel>
+                  <Input
+                    placeholder="e.g. SN-00123"
+                    value={itemForm.item_number}
+                    onChange={(e) => setItemForm({ ...itemForm, item_number: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Item type</FieldLabel>
+                  <Select value={itemForm.item_type} onValueChange={(value) => setItemForm({ ...itemForm, item_type: value })}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {(itemTypeData?.data ?? [])
+                          .filter((t: any) => !t.deletedAt)
+                          .map((t: any) => (
+                            <SelectItem key={t.item_id} value={t.item_id}>
+                              {t.type}
+                            </SelectItem>
+                          ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection step={3} title="Status" hint="">
+              <Segmented
+                value={itemForm.status as "OPEN" | "BORROWED"}
+                onChange={(v) => setItemForm({ ...itemForm, status: v })}
+                options={[{ value: "OPEN", label: "Available" }, { value: "BORROWED", label: "Borrowed" }]}
               />
-            </div>
-
-            {/* Item Brand */}
-            <div className="flex flex-col gap-1">
-              <label>Brand</label>
-              <Input
-                placeholder="Item Brand"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={itemForm.item_brand}
-                onChange={(e) =>
-                  setItemForm({
-                    ...itemForm,
-                    item_brand: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Item Number */}
-            <div className="flex flex-col gap-1">
-              <label>Item Number</label>
-              <Input
-                placeholder="Item Number"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                value={itemForm.item_number}
-                onChange={(e) =>
-                  setItemForm({
-                    ...itemForm,
-                    item_number: e.target.value,
-                  })
-                }
-              />
-            </div>
-
-            {/* Item Type */}
-            <div className="flex flex-col gap-1">
-              <label>Item Type</label>
-
-              <Select
-                value={itemForm.item_type}
-                onValueChange={(value) =>
-                  setItemForm({
-                    ...itemForm,
-                    item_type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select Item Type" />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                  <SelectLabel>Item Type</SelectLabel>
-                  {itemTypeData?.data?.map((type: any) => (
-                    <SelectItem
-                      key={type.item_id}
-                      value={type.item_id}
-                    >
-                      {type.type}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Item Status */}
-            <div className="flex flex-col gap-1">
-              <label>Item Status</label>
-
-              <Select value={itemForm.status} onValueChange={(value) =>
-                setItemForm({
-                  ...itemForm,
-                  status: value,
-                })
-              }>
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <SelectValue placeholder={"Status"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                    <SelectLabel>Status</SelectLabel>
-                    <SelectItem value="OPEN">Open</SelectItem>
-                    <SelectItem value="BORROWED">Borrowed</SelectItem>
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleCreateItem}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Create Item
+              Add item
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1131,23 +995,23 @@ export default function ItemPage() {
       </Sheet>
 
       <Sheet open={openTypeForm} onOpenChange={setOpenTypeForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Add New Item Type
+              New item type
             </SheetTitle>
             <SheetDescription className="text-white">
               Fill in item type details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <div className="flex flex-col">
-              <label>Type Name</label>
+          <div className="flex flex-col gap-4 p-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type Name</label>
               <Input
                 type="name"
                 placeholder="Item Type Name"
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className=""
                 value={typeForm.name}
                 onChange={(e) => setTypeForm({ ...typeForm, name: e.target.value })}
               />
@@ -1157,7 +1021,7 @@ export default function ItemPage() {
           <SheetFooter>
             <Button
               onClick={handleCreateItemType}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Create Item Type
             </Button>
@@ -1165,7 +1029,7 @@ export default function ItemPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1175,69 +1039,40 @@ export default function ItemPage() {
       </Sheet>
 
       <Sheet open={openItem} onOpenChange={setOpenItem}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Item Detail
+              Item
             </SheetTitle>
             <SheetDescription className="text-white">
               Review item details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
-              Item ID: {selectedItem?.item_id}
-            </label>
-
-            <div className="flex flex-col">
-              <label>Item Name</label>
-              <Input
-                value={selectedItem?.item_name ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+          <div className="flex flex-col gap-5 p-4">
+            <div className="rounded-lg border border-border bg-neutral-50 p-4">
+              <p className="font-mono text-[11px] text-muted-foreground">{selectedItem?.item_id}</p>
+              <p className="mt-1 text-lg font-semibold">{selectedItem?.item_name}</p>
+              <span
+                className={cn(
+                  "mt-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                  selectedItem?.status === "OPEN"
+                    ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                    : "bg-amber-50 text-amber-800 ring-amber-200",
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", selectedItem?.status === "OPEN" ? "bg-emerald-500" : "bg-amber-500")} />
+                {selectedItem?.status === "OPEN" ? "Available" : "Borrowed"}
+              </span>
             </div>
-
-            <div className="flex flex-col">
-              <label>Brand</label>
-              <Input
-                value={selectedItem?.item_brand ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
+            <DetailGrid>
+              <DetailItem label="Brand" value={selectedItem?.item_brand} />
+              <DetailItem
+                label="Type"
+                value={selectedItem ? itemTypeMap[selectedItem.item_type] ?? selectedItem.item_type : ""}
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Item Number</label>
-              <Input
-                value={selectedItem?.item_number ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Item Type</label>
-              <Input
-                value={
-                  selectedItem
-                    ? itemTypeMap[selectedItem.item_type] ?? selectedItem.item_type
-                    : ""
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Item Status</label>
-              <Input
-                value={selectedItem?.status ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
-            </div>
+              <DetailItem label="Serial number" value={selectedItem?.item_number} wide />
+            </DetailGrid>
           </div>
 
           <SheetFooter>
@@ -1255,18 +1090,18 @@ export default function ItemPage() {
                 }
                 setOpenItemEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
-              Edit Item
+              Edit
             </Button>
 
             <SheetClose asChild>
               <Button
                 variant="destructive"
                 onClick={() => setOpenItemDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
-                Delete Item
+                Delete
               </Button>
             </SheetClose>
           </SheetFooter>
@@ -1274,10 +1109,10 @@ export default function ItemPage() {
       </Sheet>
 
       <Sheet open={openType} onOpenChange={setOpenType}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Item Type Detail
+              Item type
             </SheetTitle>
             <SheetDescription className="text-white">
               Review item type details below.
@@ -1285,17 +1120,13 @@ export default function ItemPage() {
           </SheetHeader>
 
           <div className="flex flex-col gap-4 p-4">
-            <label className="text-xs text-gray-500">
+            <label className="font-mono text-xs text-muted-foreground">
               Type ID: {selectedType?.item_id}
             </label>
 
-            <div className="flex flex-col">
-              <label>Type Name</label>
-              <Input
-                value={selectedType?.type ?? ""}
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-                readOnly
-              />
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Type Name</label>
+              <p className="text-sm font-medium">{(selectedType?.type ?? "") || "—"}</p>
             </div>
           </div>
 
@@ -1310,7 +1141,7 @@ export default function ItemPage() {
                 }
                 setOpenTypeEditForm(true);
               }}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Edit Type
             </Button>
@@ -1319,7 +1150,7 @@ export default function ItemPage() {
               <Button
                 variant="destructive"
                 onClick={() => setOpenTypeDialog(true)}
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Delete Type
               </Button>
@@ -1329,112 +1160,83 @@ export default function ItemPage() {
       </Sheet>
 
       <Sheet open={openItemEditForm} onOpenChange={setOpenItemEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Item Detail
+              Edit item
             </SheetTitle>
             <SheetDescription className="text-white">
               Update item details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
-              Item ID: {selectedItem?.item_id}
-            </label>
+          <div className="flex flex-col gap-5 p-4">
+            <FormSection step={1} title="Item" hint="What users see when they borrow it.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Name</FieldLabel>
+                  <Input
+                    placeholder="e.g. Projector"
+                    value={editItemForm.name}
+                    onChange={(e) => setEditItemForm({ ...editItemForm, name: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Brand</FieldLabel>
+                  <Input
+                    placeholder="e.g. Epson"
+                    value={editItemForm.item_brand}
+                    onChange={(e) => setEditItemForm({ ...editItemForm, item_brand: e.target.value })}
+                  />
+                </div>
+              </div>
+            </FormSection>
 
-            <div className="flex flex-col">
-              <label>Name</label>
-              <Input
-                value={editItemForm.name}
-                onChange={(e) =>
-                  setEditItemForm({ ...editItemForm, name: e.target.value })
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+            <FormSection step={2} title="Identification" hint="The serial number helps tell identical items apart.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Serial number</FieldLabel>
+                  <Input
+                    placeholder="e.g. SN-00123"
+                    value={editItemForm.item_number}
+                    onChange={(e) => setEditItemForm({ ...editItemForm, item_number: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Item type</FieldLabel>
+                  <Select value={editItemForm.item_type} onValueChange={(value) => setEditItemForm({ ...editItemForm, item_type: value })}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select a type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {(itemTypeData?.data ?? [])
+                          .filter((t: any) => !t.deletedAt)
+                          .map((t: any) => (
+                            <SelectItem key={t.item_id} value={t.item_id}>
+                              {t.type}
+                            </SelectItem>
+                          ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection step={3} title="Status" hint="">
+              <Segmented
+                value={editItemForm.status as "OPEN" | "BORROWED"}
+                onChange={(v) => setEditItemForm({ ...editItemForm, status: v })}
+                options={[{ value: "OPEN", label: "Available" }, { value: "BORROWED", label: "Borrowed" }]}
               />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Item Brand</label>
-              <Input
-                value={editItemForm.item_brand}
-                onChange={(e) =>
-                  setEditItemForm({ ...editItemForm, item_brand: e.target.value })  
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col">
-              <label>Item Number</label>
-              <Input
-                value={editItemForm.item_number}
-                onChange={(e) =>
-                  setEditItemForm({ ...editItemForm, item_number: e.target.value }) 
-                }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label>Item Type</label>
-
-              <Select
-                value={editItemForm.item_type}
-                onValueChange={(value) =>
-                  setEditItemForm({
-                    ...editItemForm,
-                    item_type: value,
-                  })
-                }
-              >
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                  <SelectValue placeholder="Select Item Type" />
-                </SelectTrigger>
-
-                <SelectContent>
-                  {itemTypeData?.data?.map((type: any) => (
-                    <SelectItem
-                      key={type.item_id}
-                      value={type.item_id}
-                    >
-                      {type.type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Item Status */}
-            <div className="flex flex-col gap-1">
-              <label>Item Status</label>
-
-              <Select value={editItemForm.status} onValueChange={(value) =>
-                setEditItemForm({
-                  ...editItemForm,
-                  status: value,
-                })
-              }>
-                <SelectTrigger className="w-full rounded-sm focus:ring-0 focus:ring-offset-0 focus-visible:ring-0 focus-visible:ring-offset-0">
-                    <SelectValue placeholder={"Status"} />
-                </SelectTrigger>
-
-                <SelectContent>
-                <SelectGroup>
-                    <SelectLabel>Status</SelectLabel>
-                    <SelectItem value="OPEN">Open</SelectItem>
-                    <SelectItem value="BORROWED">Borrowed</SelectItem>
-                </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
+            </FormSection>
           </div>
 
           <SheetFooter>
             <Button
               onClick={handleUpdateItem}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Item
             </Button>
@@ -1442,7 +1244,7 @@ export default function ItemPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
@@ -1452,29 +1254,29 @@ export default function ItemPage() {
       </Sheet>
 
       <Sheet open={openTypeEditForm} onOpenChange={setOpenTypeEditForm}>
-        <SheetContent side="right" className=" overflow-y-scroll">
+        <SheetContent side="right" className="overflow-y-scroll data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
           <SheetHeader className="bg-brand">
             <SheetTitle className="text-white font-bold">
-              Edit Item Type
+              Edit item type
             </SheetTitle>
             <SheetDescription className="text-white">
               Update item type details below.
             </SheetDescription>
           </SheetHeader>
 
-          <div className="flex flex-col gap-2 p-4">
-            <label className="text-xs text-gray-500">
+          <div className="flex flex-col gap-4 p-4">
+            <label className="font-mono text-xs text-muted-foreground">
               Item Type ID: {selectedType?.item_id}
             </label>
 
-            <div className="flex flex-col">
-              <label>Name</label>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Name</label>
               <Input
                 value={editTypeForm.name}
                 onChange={(e) =>
                   setEditTypeForm({ ...editTypeForm, name: e.target.value })
                 }
-                className="rounded-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                className=""
               />
             </div>
           </div>
@@ -1482,7 +1284,7 @@ export default function ItemPage() {
           <SheetFooter>
             <Button
               onClick={handleUpdateItemType}
-              className="w-full bg-brand rounded-sm py-5 text-white font-medium"
+              className="w-full h-10"
             >
               Update Item Type
             </Button>
@@ -1490,7 +1292,7 @@ export default function ItemPage() {
             <SheetClose asChild>
               <Button
                 variant="outline"
-                className="w-full rounded-sm py-5 font-medium"
+                className="w-full h-10"
               >
                 Cancel
               </Button>
